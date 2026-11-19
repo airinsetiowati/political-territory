@@ -144,7 +144,7 @@ function gameAssetsPlugin(): Plugin {
 }
 
 export default defineConfig({
-  base: './',
+  base: '/political-territory/',
   plugins: [react(), gameAssetsPlugin()],
   server: {
     port: 3000,
