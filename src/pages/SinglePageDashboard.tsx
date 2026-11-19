@@ -38,12 +38,14 @@ export const SinglePageDashboard: React.FC = () => {
           {/* Logo & Game Title */}
           <div className="flex items-center gap-3">
             {/* Official Political Territory Logo */}
-            <img
-              src="/game-assets/logo"
-              alt="Political Territory"
-              className="h-10 w-auto rounded-xl shrink-0"
-              draggable={false}
-            />
+            
+              <img
+                src={`${import.meta.env.BASE_URL}game-assets/logo.png`}
+                alt="Political Territory"
+                className="h-10 w-auto rounded-xl shrink-0"
+                draggable={false}
+              />
+
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-display font-black text-base sm:text-lg text-[#253451] uppercase tracking-wide">
