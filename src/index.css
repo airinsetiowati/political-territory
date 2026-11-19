@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: #F8F5EC;
+    color: #253451;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Friendly Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F8F5EC;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #DDD9CF;
+  border-radius: 9999px;
+  border: 2px solid #F8F5EC;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C8C2B3;
+}
+
+/* Tactile & Board Game Micro-Interactions */
+.game-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.game-press:active {
+  transform: translateY(2px) scale(0.98);
+}
+
+.card-hover {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-3px);
+}
+
+/* Subtle Golden Pulse for active rounds */
+@keyframes warmPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(244, 206, 112, 0.4);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 8px rgba(244, 206, 112, 0);
+  }
+}
+
+.warm-pulse {
+  animation: warmPulse 2.5s infinite;
+}
+
+/* Smooth map pin bounce */
+@keyframes markerBob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.marker-bob {
+  animation: markerBob 2s ease-in-out infinite;
+}
+
+/* Income summary dialog: cap height with a vh fallback for older mobile browsers */
+.income-modal-card {
+  max-height: calc(100vh - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
+}
