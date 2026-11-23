@@ -19,6 +19,7 @@ import { EconomicTimerSection } from '../components/EconomicTimerSection';
 import { PlayerOverviewSection } from '../components/PlayerOverviewSection';
 import { EventCardCenter } from '../components/EventCardCenter';
 import { GameHistorySection } from '../components/GameHistorySection';
+import { BRAND_LOGO } from '../utils/brandAssets';
 
 export const SinglePageDashboard: React.FC = () => {
   const { settings, players, openModal, resetGame } = useGame();
@@ -40,7 +41,7 @@ export const SinglePageDashboard: React.FC = () => {
             {/* Official Political Territory Logo */}
             
               <img
-                src={`${import.meta.env.BASE_URL}game-assets/logo.png`}
+                src={BRAND_LOGO}
                 alt="Political Territory"
                 className="h-10 w-auto rounded-xl shrink-0"
                 draggable={false}

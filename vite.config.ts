@@ -4,11 +4,21 @@ import fs from 'fs';
 import path from 'path';
 
 function gameAssetsPlugin(): Plugin {
+  let base = '/';
+
   const setupMiddlewares = (server: any) => {
     server.middlewares.use((req: any, res: any, next: any) => {
       const decodedUrl = decodeURIComponent(req.url || '');
-      if (decodedUrl.startsWith('/game-assets/')) {
-        const subPath = decodedUrl.replace('/game-assets/', '');
+      // Vite serves the app under `base` (e.g. /political-territory/), while
+      // asset URLs may arrive with or without that prefix. Strip it so the
+      // same middleware works on localhost, preview and GitHub Pages.
+      const normalizedUrl =
+        base !== '/' && decodedUrl.startsWith(base)
+          ? '/' + decodedUrl.slice(base.length)
+          : decodedUrl;
+
+      if (normalizedUrl.startsWith('/game-assets/')) {
+        const subPath = normalizedUrl.replace('/game-assets/', '');
         let filePath = '';
         
         if (subPath === 'logo' || subPath === 'logo.png') {
@@ -92,6 +102,9 @@ function gameAssetsPlugin(): Plugin {
 
   return {
     name: 'game-assets-plugin',
+    configResolved(config) {
+      base = config.base;
+    },
     closeBundle() {
       try {
         const distAssetsDir = path.resolve('dist/game-assets');
