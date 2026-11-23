@@ -22,7 +22,7 @@ import {
 import { useGame } from '../context/GameContext';
 import { PlayerColor } from '../types/game';
 import { soundEffects } from '../services/audioService';
-import { BRAND_LOGO } from '../utils/brandAssets';
+import { BrandLogo } from '../components/BrandLogo';
 
 interface SetupPageProps {
   onStartGame: () => void;
@@ -318,8 +318,7 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
           {/* Logo & Game Title */}
           <div className="flex items-center gap-3">
             {/* Official Political Territory Logo */}
-            <img
-              src={BRAND_LOGO}
+            <BrandLogo
               alt="Political Territory"
               className="h-10 w-auto rounded-xl shrink-0"
               draggable={false}
@@ -376,8 +375,7 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div className="max-w-2xl space-y-2">
               {/* Official Game Logo (Main Menu) */}
-              <img
-                src={BRAND_LOGO}
+              <BrandLogo
                 alt="Political Territory — Board Game"
                 className="h-24 sm:h-32 w-auto max-w-full rounded-2xl"
                 draggable={false}

@@ -20,7 +20,7 @@ import {
   Compass
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
-import { BRAND_LOGO } from '../utils/brandAssets';
+import { BrandLogo } from './BrandLogo';
 
 interface SidebarProps {
   currentPage: string;
@@ -114,8 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <div className="flex items-center gap-3">
-            <img
-              src={BRAND_LOGO}
+            <BrandLogo
               alt="Political Territory"
               className="h-10 w-auto rounded-xl shrink-0"
               draggable={false}
