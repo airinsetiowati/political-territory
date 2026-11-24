@@ -44,7 +44,7 @@ export const EconomicTimerSection: React.FC = () => {
   ];
 
   return (
-    <div className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col justify-between space-y-4">
+    <div id="timer-section" className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-[#EAE9E3]">
         <div className="flex items-center gap-2">

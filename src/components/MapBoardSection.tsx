@@ -130,29 +130,69 @@ export const MapBoardSection: React.FC = () => {
     : ORIGINAL_BOARD_MAP;
 
   return (
-    <section id="map-section" className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col space-y-3">
+    <section id="map-section" className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col gap-3">
       {/* Map Section Header & Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-[#EAE9E3]">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] flex items-center justify-center text-base shadow-xs">
-            🗺️
+      <div className="flex flex-col gap-3 pb-3 border-b border-[#EAE9E3]">
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] flex items-center justify-center text-base shadow-xs shrink-0">
+              🗺️
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-display font-black text-sm text-[#253451] uppercase tracking-wide">
+                  Peta Wilayah Resmi
+                </h3>
+                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-[#F8F5EC] border border-[#EAE9E3] text-[#253451]/70">
+                  {filteredTerritories.length}/40 Area
+                </span>
+              </div>
+              <span className="text-[10px] text-[#253451]/60 font-bold">
+                Klik marker untuk membuka formulir klaim & melihat kartu kompatibel
+              </span>
+            </div>
           </div>
-          <div>
-            <h3 className="font-display font-black text-sm text-[#253451] uppercase tracking-wide">
-              Peta Wilayah Resmi (Original Board Map)
-            </h3>
-            <span className="text-[10px] text-[#253451]/60 font-bold">
-              Klik marker untuk membuka formulir klaim & melihat kartu kompatibel
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="font-mono text-[10px] font-bold text-[#253451]/60 hidden sm:inline">
+              {Math.round(zoom * 100)}%
             </span>
+            <div className="flex items-center bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                title="Zoom In"
+                className="p-1.5 rounded-lg text-[#253451] hover:bg-white transition"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                title="Zoom Out"
+                className="p-1.5 rounded-lg text-[#253451] hover:bg-white transition"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleResetView}
+                title="Reset View"
+                className="p-1.5 rounded-lg text-[#253451] hover:bg-white transition border-l border-[#EAE9E3]"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Toolbar Controls */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Filter Toolbar */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <select
             value={selectedCategory}
             onChange={e => setSelectedCategory(e.target.value)}
-            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2 py-1 text-xs font-bold text-[#253451] outline-none"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             {categories.map(c => (
               <option key={c.id} value={c.id}>{c.label}</option>
@@ -162,7 +202,7 @@ export const MapBoardSection: React.FC = () => {
           <select
             value={selectedOwner}
             onChange={e => setSelectedOwner(e.target.value)}
-            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2 py-1 text-xs font-bold text-[#253451] outline-none"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             <option value="all">Semua Pemilik</option>
             <option value="unclaimed">Belum Dikuasai</option>
@@ -175,7 +215,7 @@ export const MapBoardSection: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowLabels(!showLabels)}
-            className={`px-2.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
+            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
               showLabels ? 'bg-[#253451] text-white border-[#253451]' : 'bg-[#F8F5EC] text-[#253451]/70 border-[#EAE9E3]'
             }`}
             title="Tampilkan nama wilayah di peta"
@@ -184,40 +224,13 @@ export const MapBoardSection: React.FC = () => {
             <span>Nama Wilayah</span>
           </button>
 
-          {/* Zoom Controls */}
-          <div className="flex items-center bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl p-0.5">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              title="Zoom In"
-              className="p-1 rounded-lg text-[#253451] hover:bg-white transition"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              title="Zoom Out"
-              className="p-1 rounded-lg text-[#253451] hover:bg-white transition"
-            >
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleResetView}
-              title="Reset View"
-              className="p-1 rounded-lg text-[#253451] hover:bg-white transition border-l border-[#EAE9E3]"
-            >
-              <RotateCcw className="w-3 h-3" />
-            </button>
-          </div>
-          <span className="font-mono text-xs font-bold text-[#253451] px-1 hidden xl:inline">
-            {Math.round(zoom * 100)}%
+          <span className="ml-auto text-[10px] font-bold text-[#253451]/45 hidden sm:inline">
+            Drag untuk geser • Scroll untuk zoom
           </span>
         </div>
       </div>
 
-      {/* Main Canvas with Aspect Ratio 1209:1024 */}
+      {/* Main Canvas with Original 1209:1024 Board Proportions */}
       <div 
         ref={containerRef}
         onMouseDown={handleMouseDown}
@@ -227,10 +240,10 @@ export const MapBoardSection: React.FC = () => {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
-        className="h-[520px] sm:h-[620px] w-full bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing p-2 select-none touch-none"
+        className="h-[440px] sm:h-[500px] xl:h-[540px] w-full bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing p-2 select-none touch-none"
       >
         <div 
-          className="transition-transform duration-75 select-none shrink-0"
+          className="w-full h-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
@@ -240,7 +253,8 @@ export const MapBoardSection: React.FC = () => {
           <div 
             className="relative select-none shadow-[0_20px_50px_rgba(37,52,81,0.22)] rounded-2xl overflow-visible border-4 border-white/95 bg-[#c8e6a2]"
             style={{
-              width: 'min(86vw, calc(580px * (1209 / 1024)))',
+              width: 'min(100%, calc(540px * (1209 / 1024)))',
+              maxHeight: '100%',
               aspectRatio: '1209 / 1024',
             }}
           >

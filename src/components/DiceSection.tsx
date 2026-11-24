@@ -192,7 +192,7 @@ export const DiceSection: React.FC = () => {
   return (
     <section 
       id="dice-section"
-      className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 space-y-4 relative overflow-hidden"
+      className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col gap-4 relative overflow-hidden"
     >
       {/* Subtle background ambient motif */}
       <div className="absolute -right-10 -bottom-10 w-40 h-40 rounded-full bg-[#F4CE70]/10 blur-2xl pointer-events-none" />
