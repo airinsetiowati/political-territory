@@ -217,7 +217,7 @@ export const MapBoardSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Canvas with Aspect Ratio 1214:1024 */}
+      {/* Main Canvas with Aspect Ratio 1209:1024 */}
       <div 
         ref={containerRef}
         onMouseDown={handleMouseDown}
@@ -240,8 +240,8 @@ export const MapBoardSection: React.FC = () => {
           <div 
             className="relative select-none shadow-[0_20px_50px_rgba(37,52,81,0.22)] rounded-2xl overflow-visible border-4 border-white/95 bg-[#c8e6a2]"
             style={{
-              width: 'min(86vw, calc(580px * (1214 / 1024)))',
-              aspectRatio: '1214 / 1024',
+              width: 'min(86vw, calc(580px * (1209 / 1024)))',
+              aspectRatio: '1209 / 1024',
             }}
           >
             {/* Custom Physical Board Map Image (Original Background Truth preserved 100%) */}

@@ -23,8 +23,12 @@ function gameAssetsPlugin(): Plugin {
         
         if (subPath === 'logo' || subPath === 'logo.png') {
           filePath = path.resolve('logo game/logo.png');
-        } else if (subPath === 'map' || subPath === 'web.png' || subPath === 'map/web.png') {
-          filePath = fs.existsSync(path.resolve('map/web.png')) ? path.resolve('map/web.png') : path.resolve('web.png');
+        } else if (subPath === 'map' || subPath === 'web.jpeg' || subPath === 'map/web.jpeg' || subPath === 'web.png' || subPath === 'map/web.png') {
+          filePath = fs.existsSync(path.resolve('map/web.jpeg')) 
+            ? path.resolve('map/web.jpeg') 
+            : fs.existsSync(path.resolve('map/web.png'))
+            ? path.resolve('map/web.png')
+            : path.resolve('web.jpeg');
         } else if (subPath === 'budget') {
           filePath = path.resolve('GOVERNMENT BUDGET.jpeg');
         } else if (subPath === 'policy-back') {

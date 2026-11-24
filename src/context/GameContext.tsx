@@ -115,7 +115,13 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load initial persistent state
   const [players, setPlayersState] = useState<Player[]>(() => getLocalState('pt_players', INITIAL_PLAYERS));
-  const [territories, setTerritoriesState] = useState<Territory[]>(() => getLocalState('pt_territories', DEFAULT_TERRITORIES));
+  const [territories, setTerritoriesState] = useState<Territory[]>(() => {
+    const stored = getLocalState<Territory[]>('pt_territories', DEFAULT_TERRITORIES);
+    return stored.map(s => {
+      const def = DEFAULT_TERRITORIES.find(d => d.id === s.id);
+      return def ? { ...s, x: def.x, y: def.y } : s;
+    });
+  });
   const [policyCards, setPolicyCardsState] = useState<PolicyCard[]>(() => getLocalState('pt_policy_cards', DEFAULT_POLICY_CARDS));
   const [crisisCards, setCrisisCardsState] = useState<CrisisCard[]>(() => getLocalState('pt_crisis_cards', DEFAULT_CRISIS_CARDS));
   const [missionCards, setMissionCardsState] = useState<MissionCard[]>(() => getLocalState('pt_mission_cards', DEFAULT_MISSION_CARDS));

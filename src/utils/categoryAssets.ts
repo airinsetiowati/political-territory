@@ -9,7 +9,7 @@ import agricultureImg from '../../map/Agriculture.jpeg';
 import waterImg from '../../map/Water.jpeg';
 import tourismImg from '../../map/Tourism.jpeg';
 import forestImg from '../../map/Forest.jpeg';
-import originalBoardMapImg from '../../map/web.png';
+import originalBoardMapImg from '../../map/web.jpeg';
 
 export const ORIGINAL_BOARD_MAP = originalBoardMapImg;
 

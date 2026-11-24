@@ -274,12 +274,12 @@ export const TerritoryMapPage: React.FC = () => {
             transformOrigin: 'center center',
           }}
         >
-          {/* Strictly proportional Board Container locking aspect-ratio: 1214 / 1024 */}
+          {/* Strictly proportional Board Container locking aspect-ratio: 1209 / 1024 */}
           <div 
             className="relative select-none shadow-[0_20px_50px_rgba(37,52,81,0.22)] rounded-2xl overflow-visible border-4 border-white/95 bg-[#c8e6a2]"
             style={{
-              width: 'min(92vw, calc((100vh - 7.5rem) * (1214 / 1024)))',
-              aspectRatio: '1214 / 1024',
+              width: 'min(92vw, calc((100vh - 7.5rem) * (1209 / 1024)))',
+              aspectRatio: '1209 / 1024',
             }}
           >
             {/* Custom Physical Board Map Image (Original Background Truth preserved 100%) */}

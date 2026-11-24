@@ -180,7 +180,7 @@ export const SettingsPage: React.FC = () => {
               <div className="flex justify-between font-medium">
                 <span className="text-[#253451]/60">Sumber:</span>
                 <span className="font-mono font-bold">
-                  {settings.boardMapImage.startsWith('data:') ? 'Custom Uploaded' : 'web.png (Default)'}
+                  {settings.boardMapImage.startsWith('data:') ? 'Custom Uploaded' : 'web.jpeg (Default)'}
                 </span>
               </div>
               <div className="flex justify-between font-medium">
