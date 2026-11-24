@@ -48,6 +48,8 @@ export interface Player {
   territoryIds: string[];
   activeOpportunities: ActiveOpportunity[];
   activeMissions: ActiveMission[];
+  avatar?: string;
+  customLogo?: string;
 }
 
 export interface ActiveOpportunity {

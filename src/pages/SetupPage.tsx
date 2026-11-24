@@ -23,6 +23,7 @@ import { useGame } from '../context/GameContext';
 import { PlayerColor } from '../types/game';
 import { soundEffects } from '../services/audioService';
 import { BrandLogo } from '../components/BrandLogo';
+import { PlayerLogo } from '../components/PlayerLogo';
 
 interface SetupPageProps {
   onStartGame: () => void;
@@ -558,6 +559,50 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                           </button>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* Optional Custom Logo Upload */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
+                        Logo Khusus Pemain (Opsional)
+                      </label>
+                      {player.customLogo && (
+                        <button
+                          type="button"
+                          onClick={() => updatePlayer(player.id, { customLogo: undefined })}
+                          className="text-[9px] text-red-600 font-bold hover:underline"
+                        >
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+                        <PlayerLogo player={player} size="full" />
+                      </div>
+                      <label className="flex-1 cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const dataUrl = ev.target?.result as string;
+                                if (dataUrl) updatePlayer(player.id, { customLogo: dataUrl });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-xl bg-white border border-[#EAE9E3] hover:bg-[#F8F5EC] text-[#253451] transition">
+                          {player.customLogo ? 'Ganti Logo...' : 'Unggah Logo Gambar...'}
+                        </span>
+                      </label>
                     </div>
                   </div>
 

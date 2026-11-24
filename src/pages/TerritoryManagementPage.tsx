@@ -14,6 +14,7 @@ import {
 import { useGame } from '../context/GameContext';
 import { Territory, TerritoryCategory } from '../types/game';
 import { CategoryLogo } from '../components/CategoryLogo';
+import { PlayerLogo } from '../components/PlayerLogo';
 
 export const TerritoryManagementPage: React.FC = () => {
   const { 
@@ -256,13 +257,13 @@ export const TerritoryManagementPage: React.FC = () => {
                     : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451]/60'
                 }`}>
                   <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${
-                      owner
-                        ? owner.color === 'red' ? 'bg-[#EF4444]' :
-                          owner.color === 'blue' ? 'bg-[#3B82F6]' :
-                          owner.color === 'green' ? 'bg-[#10B981]' : 'bg-[#F59E0B]'
-                        : 'bg-slate-400'
-                    }`} />
+                    {owner ? (
+                      <div className="w-4 h-4 shrink-0">
+                        <PlayerLogo player={owner} size="full" showBadge={false} />
+                      </div>
+                    ) : (
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                    )}
                     <span className="font-extrabold text-[11px]">
                       {owner ? `Pemilik: ${owner.name}` : 'Belum Dikuasai'}
                     </span>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { CategoryLogo } from './CategoryLogo';
+import { PlayerLogo } from './PlayerLogo';
 import { TerritoryCategory } from '../types/game';
 
 export const PlayerOverviewSection: React.FC = () => {
@@ -79,7 +80,9 @@ export const PlayerOverviewSection: React.FC = () => {
               {/* Player Top row */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className={`w-3.5 h-3.5 rounded-full shrink-0 ${badge.bg} ring-2 ring-white shadow-2xs`} />
+                  <div className="w-4 h-4 shrink-0">
+                    <PlayerLogo player={p} size="full" showBadge={false} />
+                  </div>
                   <span className="font-display font-black text-sm text-[#253451] truncate">
                     {p.name}
                   </span>

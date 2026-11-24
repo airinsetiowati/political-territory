@@ -14,6 +14,7 @@ import {
 import { useGame } from '../context/GameContext';
 import { Territory, PolicyCard } from '../types/game';
 import { CategoryLogo } from './CategoryLogo';
+import { PlayerLogo } from './PlayerLogo';
 import { getCardAsset, POLICY_CARD_BACK } from '../utils/cardAssets';
 
 export const TerritoryDetailModal: React.FC = () => {
@@ -187,13 +188,13 @@ export const TerritoryDetailModal: React.FC = () => {
             : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451]'
         }`}>
           <div className="flex items-center gap-2.5">
-            <span className={`w-3 h-3 rounded-full ${
-              owner 
-                ? owner.color === 'red' ? 'bg-[#EF4444]' :
-                  owner.color === 'blue' ? 'bg-[#3B82F6]' :
-                  owner.color === 'green' ? 'bg-[#10B981]' : 'bg-[#F59E0B]'
-                : 'bg-slate-400'
-            }`} />
+            {owner ? (
+              <div className="w-6 h-6 shrink-0">
+                <PlayerLogo player={owner} size="full" />
+              </div>
+            ) : (
+              <span className="w-3 h-3 rounded-full bg-slate-400" />
+            )}
             <span className="text-xs font-extrabold uppercase tracking-wider">
               {owner ? `Dikuasai oleh ${owner.name}` : 'Wilayah Belum Dikuasai (Unclaimed)'}
             </span>

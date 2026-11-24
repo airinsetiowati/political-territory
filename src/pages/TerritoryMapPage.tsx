@@ -14,6 +14,7 @@ import { useGame } from '../context/GameContext';
 import { Territory, TerritoryCategory } from '../types/game';
 import { ORIGINAL_BOARD_MAP, CATEGORY_NAMES } from '../utils/categoryAssets';
 import { CategoryLogo } from '../components/CategoryLogo';
+import { PlayerLogo } from '../components/PlayerLogo';
 
 export const TerritoryMapPage: React.FC = () => {
   const { 
@@ -36,6 +37,7 @@ export const TerritoryMapPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedOwner, setSelectedOwner] = useState<string>('all');
   const [showLabels, setShowLabels] = useState(true);
+  const [hoveredTerritoryId, setHoveredTerritoryId] = useState<string | null>(null);
 
   // Map Editor Mode state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -297,9 +299,9 @@ export const TerritoryMapPage: React.FC = () => {
 
             {/* Interactive Territory Markers Overlay */}
             {filteredTerritories.map(t => {
-              const ringClasses = getMarkerOwnerRing(t);
               const isEditing = activeEditingTerritory?.id === t.id;
               const owner = t.ownerId ? players.find(p => p.id === t.ownerId) : null;
+              const isHovered = hoveredTerritoryId === t.id;
 
               return (
                 <div
@@ -315,41 +317,64 @@ export const TerritoryMapPage: React.FC = () => {
                     e.stopPropagation();
                     handleMarkerClick(t);
                   }}
-                  className={`absolute territory-marker cursor-pointer -translate-x-1/2 -translate-y-1/2 transition-transform duration-150 aspect-square ${
-                    isEditing ? 'scale-135 z-40' : 'hover:scale-125 active:scale-95 z-30'
+                  onMouseEnter={() => setHoveredTerritoryId(t.id)}
+                  onMouseLeave={() => setHoveredTerritoryId(null)}
+                  className={`absolute territory-marker cursor-pointer -translate-x-1/2 -translate-y-1/2 aspect-square ${
+                    isEditing ? 'z-40' : isHovered ? 'z-40' : owner ? 'z-30' : 'z-20'
                   }`}
                   style={{
                     left: `${t.x * 100}%`,
                     top: `${t.y * 100}%`,
-                    width: '4.4%',
+                    width: '4.85%',
                   }}
                   title={`${t.name} • ${CATEGORY_NAMES[t.category]}${owner ? ` [${owner.name}]` : ' [Belum Dikuasai]'}`}
                 >
-                  {/* Visual Pin Marker containing the original Category Logo */}
-                  <div className={`w-full h-full rounded-full transition relative flex items-center justify-center ${
-                    isEditMode ? 'cursor-move ring-3 ring-[#F4CE70]' : ''
-                  } ${ringClasses}`}>
-                    <CategoryLogo category={t.category} size="full" />
-
-                    {/* Owner Badge Indicator on Marker */}
-                    {owner && (
-                      <span
-                        className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border border-white shadow-xs flex items-center justify-center text-[7px] font-black text-white pointer-events-none"
-                        style={{
-                          backgroundColor:
-                            owner.color === 'red' ? '#EF4444' :
-                            owner.color === 'blue' ? '#3B82F6' :
-                            owner.color === 'green' ? '#10B981' : '#F59E0B'
-                        }}
-                      >
-                        {owner.name.charAt(0).toUpperCase()}
-                      </span>
+                  {/* Visual Marker Container */}
+                  <div className={`w-full h-full transition-transform duration-150 ${
+                    isEditing ? 'scale-125' : isHovered ? 'scale-110' : ''
+                  }`}>
+                    {owner ? (
+                      /* CLAIMED STATE: Player Logo completely covers the original spot on the map */
+                      <div className={`w-full h-full relative flex items-center justify-center rounded-full animate-in zoom-in-75 duration-200 ${
+                        isEditMode ? 'cursor-move ring-3 ring-[#F4CE70]' : ''
+                      }`}>
+                        <PlayerLogo player={owner} size="full" />
+                      </div>
+                    ) : (
+                      /* UNCLAIMED STATE: Original spot on map image is visible */
+                      <div className={`w-full h-full rounded-full transition-all duration-150 flex items-center justify-center ${
+                        isEditMode 
+                          ? 'cursor-move ring-2 ring-[#F4CE70] bg-[#F4CE70]/25' 
+                          : 'hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/20 active:scale-95'
+                      }`} />
                     )}
                   </div>
 
+                  {/* Clean Hover Tooltip */}
+                  {isHovered && !isEditMode && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-xl bg-[#253451] text-white shadow-xl pointer-events-none z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 flex flex-col items-center">
+                      <div className="flex items-center gap-1.5 text-xs font-black">
+                        {owner ? (
+                          <div className="w-3.5 h-3.5 rounded-full shrink-0 overflow-hidden">
+                            <PlayerLogo player={owner} size="full" showBadge={false} />
+                          </div>
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full shrink-0 overflow-hidden">
+                            <CategoryLogo category={t.category} size="full" />
+                          </div>
+                        )}
+                        <span>{t.name}</span>
+                      </div>
+                      <div className="text-[10px] text-amber-300 font-mono mt-0.5">
+                        +{t.baseIncome} GB/cy • +{t.basePoints} VP • {owner ? owner.name : 'Belum Dikuasai'}
+                      </div>
+                      <div className="w-2 h-2 bg-[#253451] rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2" />
+                    </div>
+                  )}
+
                   {/* Optional Territory Name Label (NEVER displaying internal code) */}
-                  {showLabels && (
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-1.5 py-0.5 rounded-md bg-white/95 border border-[#EAE9E3] text-[9px] font-bold text-[#253451] whitespace-nowrap shadow-soft-sm pointer-events-none max-w-[95px] truncate">
+                  {showLabels && !isHovered && (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-1.5 py-0.5 rounded-md bg-white/95 border border-[#EAE9E3] text-[9px] font-bold text-[#253451] whitespace-nowrap shadow-soft-sm pointer-events-none max-w-[95px] truncate z-20">
                       {t.name}
                     </div>
                   )}
