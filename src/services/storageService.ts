@@ -82,17 +82,22 @@ export function saveSessionState(key: string, data: any) {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       window.sessionStorage.setItem(key, JSON.stringify(data));
     }
+    // Also mirror to localStorage for cross-tab multi-window synchronization
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, JSON.stringify(data));
+    }
   } catch (e) {
-    console.warn('Failed to save to sessionStorage', e);
+    console.warn('Failed to save state', e);
   }
 }
 
 export function getSessionState<T>(key: string, fallback: T): T {
   try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      const val = window.sessionStorage.getItem(key);
-      if (!val) return fallback;
-      return JSON.parse(val) as T;
+    if (typeof window !== 'undefined') {
+      const sVal = window.sessionStorage ? window.sessionStorage.getItem(key) : null;
+      if (sVal) return JSON.parse(sVal) as T;
+      const lVal = window.localStorage ? window.localStorage.getItem(key) : null;
+      if (lVal) return JSON.parse(lVal) as T;
     }
     return fallback;
   } catch {
@@ -102,14 +107,34 @@ export function getSessionState<T>(key: string, fallback: T): T {
 
 export function clearSessionState() {
   try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.clear();
+    if (typeof window !== 'undefined') {
+      if (window.sessionStorage) window.sessionStorage.clear();
+      if (window.localStorage) {
+        // Clear game-specific keys
+        const keys = ['pt_players', 'pt_territories', 'pt_policy_cards', 'pt_crisis_cards', 'pt_mission_cards', 'pt_opp_cards', 'pt_logs', 'pt_settings', 'pt_economy', 'pt_dice'];
+        keys.forEach(k => window.localStorage.removeItem(k));
+      }
     }
   } catch (e) {
-    console.warn('Failed to clear sessionStorage', e);
+    console.warn('Failed to clear state', e);
   }
 }
 
-// Backward compatible aliases pointing strictly to temporary sessionStorage
+// Multi-tab synchronization BroadcastChannel
+export const gameSyncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('political_territory_sync')
+  : null;
+
+export function broadcastGameEvent(event: { type: string; payload: any }) {
+  try {
+    if (gameSyncChannel) {
+      gameSyncChannel.postMessage(event);
+    }
+  } catch (err) {
+    console.warn('Failed to broadcast game event:', err);
+  }
+}
+
+// Backward compatible aliases pointing to persistent storage
 export const saveLocalState = saveSessionState;
 export const getLocalState = getSessionState;

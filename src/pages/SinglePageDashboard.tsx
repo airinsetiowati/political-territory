@@ -14,6 +14,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
+import { DiceSection } from '../components/DiceSection';
 import { MapBoardSection } from '../components/MapBoardSection';
 import { EconomicTimerSection } from '../components/EconomicTimerSection';
 import { PlayerOverviewSection } from '../components/PlayerOverviewSection';
@@ -66,6 +67,13 @@ export const SinglePageDashboard: React.FC = () => {
           <nav className="hidden md:flex items-center gap-1.5 bg-[#F8F5EC] p-1 rounded-2xl border border-[#EAE9E3] text-xs font-bold text-[#253451]">
             <button
               type="button"
+              onClick={() => scrollToSection('dice-section')}
+              className="px-3 py-1.5 rounded-xl hover:bg-white transition flex items-center gap-1 text-[#253451]"
+            >
+              <span>🎲 Dadu</span>
+            </button>
+            <button
+              type="button"
               onClick={() => scrollToSection('map-section')}
               className="px-3 py-1.5 rounded-xl hover:bg-white transition flex items-center gap-1"
             >
@@ -97,7 +105,7 @@ export const SinglePageDashboard: React.FC = () => {
           {/* Header Action Badges & Buttons */}
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-extrabold px-3 py-1.5 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] text-[#253451] hidden sm:inline">
-              Round #{settings.currentRound} • {players.length} Pemain
+              Round #{settings.currentRound} • Giliran #{settings.currentTurn || 1} • {players.length} Pemain
             </span>
 
             {/* New Game Button */}
@@ -149,8 +157,9 @@ export const SinglePageDashboard: React.FC = () => {
             <MapBoardSection />
           </div>
 
-          {/* Right Column: Economic Timer & Player Overview (5 cols) */}
+          {/* Right Column: Dice System, Economic Timer & Player Overview (5 cols) */}
           <div className="lg:col-span-5 w-full space-y-6">
+            <DiceSection />
             <EconomicTimerSection />
             <PlayerOverviewSection />
           </div>

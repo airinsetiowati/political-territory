@@ -1344,6 +1344,16 @@ export const DEFAULT_SETTINGS: GameSettings = {
   timerRemainingSeconds: 300,
   isTimerRunning: false,
   currentRound: 1,
+  currentTurn: 1,
+  activePlayerId: 'red',
+  diceState: {
+    currentValue: null,
+    isRolling: false,
+    lastRolledByPlayerId: null,
+    lastRolledAtRound: null,
+    hasRolledThisTurn: false,
+    history: [],
+  },
   turnLimit: 0,
   startingVP: 0,
   availableDecks: {

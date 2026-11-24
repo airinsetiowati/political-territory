@@ -174,7 +174,28 @@ export type LogType =
   | 'mission_completed' 
   | 'opportunity' 
   | 'game_control'
-  | 'development';
+  | 'development'
+  | 'dice_roll';
+
+export interface DiceRollLog {
+  id: string;
+  playerId: string;
+  playerName: string;
+  playerColor: PlayerColor;
+  value: number; // 1 to 6
+  round: number;
+  turn: number;
+  timestamp: string;
+}
+
+export interface DiceState {
+  currentValue: number | null; // Last roll value (1-6)
+  isRolling: boolean;
+  lastRolledByPlayerId: string | null;
+  lastRolledAtRound: number | null;
+  hasRolledThisTurn: boolean;
+  history: DiceRollLog[];
+}
 
 export interface GameLog {
   id: string;
@@ -189,6 +210,7 @@ export interface GameLog {
   pointChange?: number;
   territoryId?: string;
   cardCode?: string;
+  diceValue?: number;
 }
 
 export interface GameSettings {
@@ -198,6 +220,9 @@ export interface GameSettings {
   timerRemainingSeconds: number;
   isTimerRunning: boolean;
   currentRound: number;
+  currentTurn?: number; // Overall turn number
+  activePlayerId?: string; // Player ID whose turn is active
+  diceState?: DiceState; // Dice system state
   turnLimit: number; // 0 for unlimited
   startingVP?: number;
   availableDecks?: {

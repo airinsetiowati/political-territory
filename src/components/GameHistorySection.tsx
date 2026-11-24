@@ -11,7 +11,8 @@ import {
   Coins,
   ShieldAlert,
   Sparkles,
-  Target
+  Target,
+  Dices
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
@@ -30,13 +31,14 @@ export const GameHistorySection: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['Timestamp', 'Round', 'Type', 'Player', 'CardCode', 'Description', 'GB_Change', 'VP_Change'];
+    const headers = ['Timestamp', 'Round', 'Type', 'Player', 'CardCode', 'Dice_Value', 'Description', 'GB_Change', 'VP_Change'];
     const rows = logs.map(l => [
       `"${l.timestamp}"`,
       l.round,
       `"${l.type}"`,
       `"${l.playerName || ''}"`,
       `"${l.cardCode || ''}"`,
+      l.diceValue !== undefined ? l.diceValue : '',
       `"${l.description.replace(/"/g, '""')}"`,
       l.gbChange || 0,
       l.pointChange || 0,
@@ -59,7 +61,8 @@ export const GameHistorySection: React.FC = () => {
       if (filterType === 'opportunity' && log.type !== 'opportunity') return false;
       if (filterType === 'mission' && log.type !== 'mission_completed' && log.type !== 'mission_activated') return false;
       if (filterType === 'adjustment' && log.type !== 'gb_change' && log.type !== 'point_change') return false;
-      if (!['claim', 'economic_round', 'crisis', 'opportunity', 'mission', 'adjustment'].includes(filterType) && (log.type as string) !== filterType) return false;
+      if (filterType === 'dice' && log.type !== 'dice_roll') return false;
+      if (!['claim', 'economic_round', 'crisis', 'opportunity', 'mission', 'adjustment', 'dice'].includes(filterType) && (log.type as string) !== filterType) return false;
     }
     if (filterPlayer !== 'all' && log.playerId !== filterPlayer) return false;
     if (searchQuery.trim()) {
@@ -82,6 +85,7 @@ export const GameHistorySection: React.FC = () => {
       case 'mission_activated': return <Target className="w-3.5 h-3.5 text-[#10B981]" />;
       case 'gb_change':
       case 'point_change': return <Coins className="w-3.5 h-3.5 text-purple-600" />;
+      case 'dice_roll': return <Dices className="w-3.5 h-3.5 text-indigo-500" />;
       default: return <History className="w-3.5 h-3.5 text-[#253451]/60" />;
     }
   };
@@ -150,6 +154,7 @@ export const GameHistorySection: React.FC = () => {
           className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#253451] outline-none"
         >
           <option value="all">Semua Tipe Aksi</option>
+          <option value="dice">🎲 Lemparan Dadu</option>
           <option value="claim">Klaim Wilayah</option>
           <option value="economic_round">Siklus Ekonomi</option>
           <option value="crisis">Keputusan Krisis</option>
@@ -204,6 +209,12 @@ export const GameHistorySection: React.FC = () => {
                     {l.cardCode && (
                       <span className="text-[10px] font-mono font-extrabold text-[#EF956F] bg-[#F8F5EC] px-1 rounded">
                         {l.cardCode}
+                      </span>
+                    )}
+                    {l.diceValue !== undefined && (
+                      <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded flex items-center gap-1">
+                        <Dices className="w-2.5 h-2.5" />
+                        <span>Angka {l.diceValue}</span>
                       </span>
                     )}
                   </div>
