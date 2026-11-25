@@ -79,12 +79,17 @@ export async function getAllImagesFromDB(): Promise<Record<string, string>> {
 
 export function saveSessionState(key: string, data: any) {
   try {
+    const serialized = JSON.stringify(data);
     if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.setItem(key, JSON.stringify(data));
+      if (window.sessionStorage.getItem(key) !== serialized) {
+        window.sessionStorage.setItem(key, serialized);
+      }
     }
     // Also mirror to localStorage for cross-tab multi-window synchronization
     if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(key, JSON.stringify(data));
+      if (window.localStorage.getItem(key) !== serialized) {
+        window.localStorage.setItem(key, serialized);
+      }
     }
   } catch (e) {
     console.warn('Failed to save state', e);
@@ -94,10 +99,11 @@ export function saveSessionState(key: string, data: any) {
 export function getSessionState<T>(key: string, fallback: T): T {
   try {
     if (typeof window !== 'undefined') {
-      const sVal = window.sessionStorage ? window.sessionStorage.getItem(key) : null;
-      if (sVal) return JSON.parse(sVal) as T;
+      // Read shared localStorage first so newly opened/refreshed tabs get latest multiplayer state
       const lVal = window.localStorage ? window.localStorage.getItem(key) : null;
       if (lVal) return JSON.parse(lVal) as T;
+      const sVal = window.sessionStorage ? window.sessionStorage.getItem(key) : null;
+      if (sVal) return JSON.parse(sVal) as T;
     }
     return fallback;
   } catch {

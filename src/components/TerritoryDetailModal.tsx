@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Coins, 
@@ -25,24 +25,43 @@ export const TerritoryDetailModal: React.FC = () => {
     territories, 
     players, 
     policyCards,
+    activePlayer,
+    claimTurnPlayer,
+    diceState,
+    devicePlayerId,
     claimTerritory, 
     revokeTerritoryClaim,
     economyConfig,
     settings 
   } = useGame();
 
+  const lockedRollerId = claimTurnPlayer?.id || null;
+  const defaultPlayerId = lockedRollerId || activeModalData?.playerId || activePlayer?.id || players[0]?.id || '';
+
   const [inputCode, setInputCode] = useState('');
-  const [selectedPlayerId, setSelectedPlayerId] = useState(players[0]?.id || '');
+  const [selectedPlayerId, setSelectedPlayerId] = useState(defaultPlayerId);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeModal === 'TERRITORY_DETAIL') {
+      setSelectedPlayerId(lockedRollerId || activeModalData?.playerId || activePlayer?.id || players[0]?.id || '');
+      setInputCode('');
+      setErrorMessage(null);
+      setSuccessMessage(null);
+    }
+  }, [activeModal, activeModalData?.territoryId, activeModalData?.playerId, lockedRollerId, activePlayer?.id, players]);
 
   if (activeModal !== 'TERRITORY_DETAIL' || !activeModalData?.territoryId) return null;
 
   const territory: Territory | undefined = territories.find(t => t.id === activeModalData.territoryId);
   if (!territory) return null;
 
+  const hasRolled = Boolean(diceState.hasRolledThisTurn && claimTurnPlayer);
+  const effectivePlayerId = claimTurnPlayer?.id || activePlayer?.id || selectedPlayerId;
   const owner = territory.ownerId ? players.find(p => p.id === territory.ownerId) : null;
-  const selectedPlayer = players.find(p => p.id === selectedPlayerId) || players[0];
+  const selectedPlayer = players.find(p => p.id === effectivePlayerId) || players[0];
+  const isDeviceAllowed = devicePlayerId === 'all' || devicePlayerId === effectivePlayerId;
   const catConfig = economyConfig[territory.category] || {
     basePoints: territory.basePoints,
     claimCost: territory.claimCost,
@@ -105,7 +124,7 @@ export const TerritoryDetailModal: React.FC = () => {
     : false;
 
   const hasEnoughGB = selectedPlayer ? selectedPlayer.budget >= catConfig.claimCost : false;
-  const isReadyToClaim = isCardFound && !isCardUsed && isCategoryCompatible && hasEnoughGB;
+  const isReadyToClaim = hasRolled && isCardFound && !isCardUsed && isCategoryCompatible && hasEnoughGB && !diceState.isRolling && isDeviceAllowed && !successMessage;
 
   const handleSelectCard = (card: PolicyCard) => {
     if (card.isUsed && !card.isReusable) return;
@@ -118,12 +137,27 @@ export const TerritoryDetailModal: React.FC = () => {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    if (diceState.isRolling) {
+      setErrorMessage('Animasi dadu sedang berlangsung. Tunggu hingga hasil lemparan selesai.');
+      return;
+    }
+
+    if (!hasRolled || !claimTurnPlayer) {
+      setErrorMessage(`${activePlayer?.name || 'Pemain aktif'} harus melakukan Roll Dice terlebih dahulu sebelum mengklaim wilayah.`);
+      return;
+    }
+
+    if (!isDeviceAllowed) {
+      setErrorMessage(`Bukan giliran perangkat ini. Klaim wilayah hanya dapat dilakukan oleh ${selectedPlayer?.name}.`);
+      return;
+    }
+
     if (!inputCode.trim()) {
       setErrorMessage('Silakan pilih atau masukkan kode kartu Policy fisik.');
       return;
     }
 
-    const res = claimTerritory(selectedPlayerId, territory.id, inputCode);
+    const res = claimTerritory(effectivePlayerId, territory.id, inputCode);
     if (res.success) {
       setSuccessMessage(res.message);
       setTimeout(() => {
@@ -275,9 +309,11 @@ export const TerritoryDetailModal: React.FC = () => {
 
             {/* Step 1: Select Player */}
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
                 <label className="text-[11px] font-extrabold text-[#253451]/70">
-                  1. Pilih Pemain yang Mengklaim:
+                  {lockedRollerId
+                    ? `1. Pelempar Dadu Aktif (Otomatis): ${claimTurnPlayer?.name}`
+                    : '1. Pilih Pemain yang Mengklaim:'}
                 </label>
                 {selectedPlayer && (
                   <span className={`text-[11px] font-mono font-extrabold ${hasEnoughGB ? 'text-[#73B77A]' : 'text-red-500'}`}>
@@ -285,19 +321,39 @@ export const TerritoryDetailModal: React.FC = () => {
                   </span>
                 )}
               </div>
+              {lockedRollerId ? (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900">
+                  🎲 Kepemilikan klaim dikunci ke <strong>{claimTurnPlayer?.name}</strong> sesuai hasil Roll Dice ({diceState.currentValue ?? '-'}).
+                </div>
+              ) : (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900">
+                  🎲 Pemain aktif (<strong>{activePlayer?.name}</strong>) harus melakukan <strong>Roll Dice</strong> terlebih dahulu sebelum mengklaim wilayah.
+                </div>
+              )}
+              {!isDeviceAllowed && (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-50 border border-red-200 text-[11px] font-bold text-red-700">
+                  Perangkat ini sedang berperan sebagai pemain lain. Hanya {selectedPlayer?.name} atau Meja Bersama yang dapat mengeksekusi klaim.
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {players.map(p => {
                   const hasGb = p.budget >= catConfig.claimCost;
-                  const isSelected = selectedPlayerId === p.id;
+                  const isSelected = effectivePlayerId === p.id;
+                  const isDisabledByTurn = p.id !== effectivePlayerId;
                   return (
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => setSelectedPlayerId(p.id)}
+                      disabled={isDisabledByTurn}
+                      onClick={() => {
+                        if (!isDisabledByTurn) setSelectedPlayerId(p.id);
+                      }}
                       className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col justify-between transition text-left ${
                         isSelected
                           ? 'bg-[#253451] text-white border-[#253451] shadow-xs'
-                          : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
+                          : isDisabledByTurn
+                            ? 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451]/35 opacity-45 cursor-not-allowed'
+                            : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 truncate mb-1">

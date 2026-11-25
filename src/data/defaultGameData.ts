@@ -1349,9 +1349,12 @@ export const DEFAULT_SETTINGS: GameSettings = {
   diceState: {
     currentValue: null,
     isRolling: false,
+    rollingPlayerId: null,
     lastRolledByPlayerId: null,
     lastRolledAtRound: null,
+    lastRolledAtTurn: null,
     hasRolledThisTurn: false,
+    turnPhase: 'waiting_roll',
     history: [],
   },
   turnLimit: 0,

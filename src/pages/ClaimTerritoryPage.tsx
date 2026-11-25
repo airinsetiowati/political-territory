@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Flag, 
   Search, 
@@ -18,16 +18,28 @@ export const ClaimTerritoryPage: React.FC = () => {
   const { 
     players, 
     territories, 
-    claimTerritory, 
-    economyConfig 
+    activePlayer,
+    claimTurnPlayer,
+    diceState,
+    devicePlayerId,
+    settings,
+    claimTerritory
   } = useGame();
 
-  const [selectedPlayerId, setSelectedPlayerId] = useState(players[0]?.id || '');
+  const lockedRollerId = claimTurnPlayer?.id || null;
+  const hasRolled = Boolean(diceState.hasRolledThisTurn && claimTurnPlayer);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(lockedRollerId || activePlayer?.id || players[0]?.id || '');
   const [selectedTerritoryId, setSelectedTerritoryId] = useState('');
   const [cardCode, setCardCode] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  const selectedPlayer = players.find(p => p.id === selectedPlayerId);
+  useEffect(() => {
+    setSelectedPlayerId(lockedRollerId || activePlayer?.id || players[0]?.id || '');
+  }, [lockedRollerId, activePlayer?.id, players]);
+
+  const effectivePlayerId = claimTurnPlayer?.id || activePlayer?.id || selectedPlayerId;
+  const selectedPlayer = players.find(p => p.id === effectivePlayerId);
+  const isDeviceAllowed = devicePlayerId === 'all' || devicePlayerId === effectivePlayerId;
   const selectedTerritory = territories.find(t => t.id === selectedTerritoryId);
   const unclaimedTerritories = territories.filter(t => t.ownerId === null);
 
@@ -41,8 +53,24 @@ export const ClaimTerritoryPage: React.FC = () => {
     e.preventDefault();
     setStatusMessage(null);
 
-    if (!selectedPlayerId) {
+    if (!effectivePlayerId) {
       setStatusMessage({ type: 'error', text: 'Pilih pemain yang akan mengklaim wilayah.' });
+      return;
+    }
+    if (settings.status !== 'active') {
+      setStatusMessage({ type: 'error', text: 'Pertandingan belum aktif.' });
+      return;
+    }
+    if (diceState.isRolling) {
+      setStatusMessage({ type: 'error', text: 'Animasi dadu sedang berlangsung.' });
+      return;
+    }
+    if (!hasRolled || !claimTurnPlayer) {
+      setStatusMessage({ type: 'error', text: `${activePlayer?.name || 'Pemain aktif'} harus melempar dadu terlebih dahulu sebelum mengklaim wilayah.` });
+      return;
+    }
+    if (!isDeviceAllowed) {
+      setStatusMessage({ type: 'error', text: `Bukan giliran perangkat ini. Hanya ${selectedPlayer?.name} atau Meja Bersama yang dapat melakukan klaim.` });
       return;
     }
     if (!selectedTerritoryId) {
@@ -54,7 +82,7 @@ export const ClaimTerritoryPage: React.FC = () => {
       return;
     }
 
-    const res = claimTerritory(selectedPlayerId, selectedTerritoryId, cardCode);
+    const res = claimTerritory(effectivePlayerId, selectedTerritoryId, cardCode);
     if (res.success) {
       setStatusMessage({ type: 'success', text: res.message });
       setSelectedTerritoryId('');
@@ -98,18 +126,41 @@ export const ClaimTerritoryPage: React.FC = () => {
             {/* Step 1: Select Player */}
             <div>
               <label className="block text-xs font-extrabold text-[#253451]/70 mb-1.5">
-                1. Pilih Pemain:
+                {lockedRollerId
+                  ? `1. Pelempar Dadu Aktif (Otomatis): ${claimTurnPlayer?.name}`
+                  : `1. Pemain Giliran Aktif: ${activePlayer?.name}`}
               </label>
+              {lockedRollerId ? (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900">
+                  🎲 Kepemilikan klaim dikunci ke <strong>{claimTurnPlayer?.name}</strong> (Dadu: {diceState.currentValue ?? '-'}).
+                </div>
+              ) : (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900">
+                  🎲 <strong>{activePlayer?.name}</strong> harus melakukan Roll Dice terlebih dahulu sebelum mengklaim wilayah.
+                </div>
+              )}
+              {hasRolled && !isDeviceAllowed && (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-50 border border-red-200 text-[11px] font-bold text-red-700">
+                  Perangkat ini berperan sebagai pemain lain. Hanya {selectedPlayer?.name} atau Meja Bersama yang dapat mengeksekusi klaim.
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
-                {players.map(p => (
+                {players.map(p => {
+                  const isLockedOut = p.id !== effectivePlayerId;
+                  return (
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setSelectedPlayerId(p.id)}
+                    disabled={isLockedOut}
+                    onClick={() => {
+                      if (!isLockedOut) setSelectedPlayerId(p.id);
+                    }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition ${
-                      selectedPlayerId === p.id
+                      effectivePlayerId === p.id
                         ? 'bg-[#253451] text-white border-[#253451] shadow-xs'
-                        : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
+                        : isLockedOut
+                          ? 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451]/35 opacity-45 cursor-not-allowed'
+                          : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 truncate">
@@ -122,7 +173,8 @@ export const ClaimTerritoryPage: React.FC = () => {
                     </div>
                     <span className="font-mono text-[10px]">{p.budget} GB</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -186,11 +238,17 @@ export const ClaimTerritoryPage: React.FC = () => {
 
             <button
               type="submit"
-              disabled={!selectedTerritoryId}
+              disabled={!selectedTerritoryId || !hasRolled || diceState.isRolling || !isDeviceAllowed || settings.status !== 'active'}
               className="w-full py-3.5 rounded-2xl bg-[#253451] hover:bg-[#1C273D] text-white font-extrabold text-xs uppercase tracking-wider shadow-soft-sm transition flex items-center justify-center gap-2 disabled:opacity-40 game-press"
             >
               <Flag className="w-4 h-4 text-[#F4CE70]" />
-              <span>Eksekusi Klaim Wilayah</span>
+              <span>
+                {!hasRolled
+                  ? `Roll Dice Terlebih Dahulu (${activePlayer?.name})`
+                  : !isDeviceAllowed
+                    ? `Menunggu ${selectedPlayer?.name}`
+                    : `Eksekusi Klaim Wilayah (${selectedPlayer?.name})`}
+              </span>
             </button>
           </form>
         </div>

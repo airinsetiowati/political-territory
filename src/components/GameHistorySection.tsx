@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  History, 
-  Search, 
-  Download, 
+import {
+  History,
+  Search,
+  Download,
   Undo2,
   Flag,
   Coins,
@@ -90,29 +90,30 @@ export const GameHistorySection: React.FC = () => {
   return (
     <section
       id="history-section"
-      className="h-full bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col gap-3.5"
+      className="h-full bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-3.5 sm:p-4 flex flex-col gap-3"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-2 pb-3 border-b border-[#EAE9E3]">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EAE9E3]">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] flex items-center justify-center shrink-0">
-            <History className="w-4 h-4 text-[#F4CE70]" />
+            <History className="w-4 h-4 text-[#D9A732]" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-display font-black text-[#253451] uppercase tracking-wide">
+            <h2 className="text-sm font-display font-black text-[#253451] uppercase tracking-wide truncate">
               Riwayat Permainan
             </h2>
-            <p className="text-[10px] text-[#253451]/55 font-bold">
-              Log kronologis aksi &amp; perubahan GB/VP
+            <p className="text-[10px] text-[#253451]/55 font-bold truncate">
+              Log aksi &amp; perubahan GB/VP
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
           <button
+            type="button"
             onClick={handleUndo}
             disabled={logs.length === 0}
-            className="px-2.5 py-1.5 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-[10px] border border-[#EAE9E3] transition flex items-center gap-1 disabled:opacity-40"
+            className="px-2.5 py-1 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-[10px] border border-[#EAE9E3] transition flex items-center gap-1 disabled:opacity-40"
             title="Batalkan aksi gameplay terakhir"
           >
             <Undo2 className="w-3 h-3 text-[#EF956F]" />
@@ -120,9 +121,10 @@ export const GameHistorySection: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={handleExportCSV}
             disabled={logs.length === 0}
-            className="px-2.5 py-1.5 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-extrabold text-[10px] uppercase tracking-wider transition shadow-xs flex items-center gap-1 disabled:opacity-40"
+            className="px-2.5 py-1 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-extrabold text-[10px] uppercase tracking-wider transition shadow-xs flex items-center gap-1 disabled:opacity-40"
             title="Ekspor seluruh riwayat ke CSV"
           >
             <Download className="w-3 h-3 text-[#F4CE70]" />
@@ -132,13 +134,13 @@ export const GameHistorySection: React.FC = () => {
       </div>
 
       {undoMessage && (
-        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold">
+        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold">
           {undoMessage}
         </div>
       )}
 
       {/* Filter and Search Controls */}
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="relative">
           <input
             type="text"
@@ -147,7 +149,7 @@ export const GameHistorySection: React.FC = () => {
             placeholder="Cari dalam riwayat..."
             className="w-full bg-[#F8F5EC] border border-[#EAE9E3] focus:border-[#253451] rounded-xl px-3 py-1.5 pl-8 text-xs text-[#253451] outline-none font-bold"
           />
-          <Search className="w-3.5 h-3.5 text-[#253451]/40 absolute left-2.5 top-2.5" />
+          <Search className="w-3.5 h-3.5 text-[#253451]/40 absolute left-2.5 top-2" />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -187,8 +189,8 @@ export const GameHistorySection: React.FC = () => {
         </div>
       </div>
 
-      {/* Log Feed List (Newest first) */}
-      <div className="flex-1 min-h-[220px] max-h-[420px] xl:max-h-none overflow-y-auto space-y-1.5 pr-1">
+      {/* Log Feed List (Bounded height to align cleanly with EventCardCenter) */}
+      <div className="flex-1 min-h-[240px] max-h-[380px] lg:max-h-[400px] overflow-y-auto space-y-1.5 pr-1">
         {filteredLogs.length === 0 ? (
           <div className="h-full min-h-[160px] flex flex-col items-center justify-center text-center px-4 py-8 text-xs text-[#253451]/50 font-medium bg-[#F8F5EC] rounded-2xl border border-dashed border-[#EAE9E3]">
             <History className="w-6 h-6 text-[#253451]/20 mb-2" />
@@ -198,9 +200,9 @@ export const GameHistorySection: React.FC = () => {
           filteredLogs.map(l => (
             <div
               key={l.id}
-              className="p-2.5 bg-[#F8F5EC] rounded-xl border border-[#EAE9E3] hover:border-[#253451]/20 transition flex items-start gap-2.5"
+              className="p-2 bg-[#F8F5EC] rounded-xl border border-[#EAE9E3] hover:border-[#253451]/20 transition flex items-start gap-2"
             >
-              <div className="w-7 h-7 rounded-lg bg-white border border-[#EAE9E3] flex items-center justify-center shrink-0">
+              <div className="w-6 h-6 rounded-lg bg-white border border-[#EAE9E3] flex items-center justify-center shrink-0 mt-0.5">
                 {getLogIcon(l.type)}
               </div>
 

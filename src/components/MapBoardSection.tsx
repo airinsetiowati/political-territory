@@ -1,26 +1,26 @@
 import React, { useState, useRef } from 'react';
-import { 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  Filter, 
-  Eye, 
-  EyeOff,
-  MapPin,
-  Sparkles
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
-import { Territory, TerritoryCategory } from '../types/game';
+import { Territory } from '../types/game';
 import { ORIGINAL_BOARD_MAP, CATEGORY_NAMES } from '../utils/categoryAssets';
 import { CategoryLogo } from './CategoryLogo';
 import { PlayerLogo } from './PlayerLogo';
 
 export const MapBoardSection: React.FC = () => {
-  const { 
-    territories, 
-    players, 
-    settings, 
-    openModal 
+  const {
+    territories,
+    players,
+    settings,
+    activePlayer,
+    claimTurnPlayer,
+    diceState,
+    openModal
   } = useGame();
 
   // Zoom & Pan state
@@ -101,6 +101,8 @@ export const MapBoardSection: React.FC = () => {
     return true;
   });
 
+  const claimedTotal = territories.filter(t => t.ownerId !== null).length;
+
   const categories: { id: string; label: string }[] = [
     { id: 'all', label: 'Semua Kategori (40)' },
     { id: 'politics', label: 'Politics (4)' },
@@ -113,42 +115,38 @@ export const MapBoardSection: React.FC = () => {
     { id: 'forest', label: 'Forest (4)' },
   ];
 
-  const getMarkerOwnerRing = (t: Territory) => {
-    if (!t.ownerId) {
-      return 'ring-2 ring-white/95 shadow-md shadow-black/20 hover:ring-amber-300 hover:ring-3';
-    }
-    const owner = players.find(p => p.id === t.ownerId);
-    if (!owner) return 'ring-2 ring-white shadow-md shadow-black/20';
-    if (owner.color === 'red') return 'ring-3 sm:ring-4 ring-[#EF4444] shadow-lg shadow-red-500/50';
-    if (owner.color === 'blue') return 'ring-3 sm:ring-4 ring-[#3B82F6] shadow-lg shadow-blue-500/50';
-    if (owner.color === 'green') return 'ring-3 sm:ring-4 ring-[#10B981] shadow-lg shadow-emerald-500/50';
-    return 'ring-3 sm:ring-4 ring-[#F59E0B] shadow-lg shadow-yellow-500/50';
-  };
-
-  const mapSrc = (settings.boardMapImage && settings.boardMapImage.startsWith('data:')) 
-    ? settings.boardMapImage 
+  const mapSrc = (settings.boardMapImage && settings.boardMapImage.startsWith('data:'))
+    ? settings.boardMapImage
     : ORIGINAL_BOARD_MAP;
 
   return (
-    <section id="map-section" className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-4 sm:p-5 flex flex-col gap-3">
-      {/* Map Section Header & Toolbar */}
-      <div className="flex flex-col gap-3 pb-3 border-b border-[#EAE9E3]">
-        <div className="flex flex-wrap items-start justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] flex items-center justify-center text-base shadow-xs shrink-0">
+    <section id="map-section" className="bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-3.5 sm:p-4 flex flex-col gap-2.5">
+      {/* Compact Header & Unified Filter + Zoom Toolbar */}
+      <div className="flex flex-col gap-2 pb-2.5 border-b border-[#EAE9E3]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-[#F8F5EC] border border-[#EAE9E3] flex items-center justify-center text-sm shadow-xs shrink-0">
               🗺️
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <h3 className="font-display font-black text-sm text-[#253451] uppercase tracking-wide">
                   Peta Wilayah Resmi
                 </h3>
-                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-[#F8F5EC] border border-[#EAE9E3] text-[#253451]/70">
+                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-[#F8F5EC] border border-[#EAE9E3] text-[#253451]">
                   {filteredTerritories.length}/40 Area
                 </span>
+                <span className="text-[10px] font-mono font-bold text-[#2e6d34] bg-[#73B77A]/15 px-2 py-0.5 rounded-full border border-[#73B77A]/25 hidden sm:inline">
+                  {claimedTotal} Dikuasai • {40 - claimedTotal} Bebas
+                </span>
+                {claimTurnPlayer && !diceState.isRolling && (
+                  <span className="text-[10px] font-extrabold text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                    🎲 Giliran Claim: {claimTurnPlayer.name} (Dadu: {diceState.currentValue ?? '-'})
+                  </span>
+                )}
               </div>
-              <span className="text-[10px] text-[#253451]/60 font-bold">
-                Klik marker untuk membuka formulir klaim & melihat kartu kompatibel
+              <span className="text-[10px] text-[#253451]/60 font-bold block truncate">
+                Klik marker wilayah di peta untuk klaim area &amp; cek kartu kompatibel
               </span>
             </div>
           </div>
@@ -192,7 +190,7 @@ export const MapBoardSection: React.FC = () => {
           <select
             value={selectedCategory}
             onChange={e => setSelectedCategory(e.target.value)}
-            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             {categories.map(c => (
               <option key={c.id} value={c.id}>{c.label}</option>
@@ -202,7 +200,7 @@ export const MapBoardSection: React.FC = () => {
           <select
             value={selectedOwner}
             onChange={e => setSelectedOwner(e.target.value)}
-            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1 text-[11px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             <option value="all">Semua Pemilik</option>
             <option value="unclaimed">Belum Dikuasai</option>
@@ -215,8 +213,8 @@ export const MapBoardSection: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowLabels(!showLabels)}
-            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
-              showLabels ? 'bg-[#253451] text-white border-[#253451]' : 'bg-[#F8F5EC] text-[#253451]/70 border-[#EAE9E3]'
+            className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+              showLabels ? 'bg-[#253451] text-white border-[#253451]' : 'bg-[#F8F5EC] text-[#253451]/75 border-[#EAE9E3]'
             }`}
             title="Tampilkan nama wilayah di peta"
           >
@@ -224,25 +222,26 @@ export const MapBoardSection: React.FC = () => {
             <span>Nama Wilayah</span>
           </button>
 
-          <span className="ml-auto text-[10px] font-bold text-[#253451]/45 hidden sm:inline">
+          <span className="ml-auto text-[10px] font-bold text-[#253451]/45 hidden md:inline">
             Drag untuk geser • Scroll untuk zoom
           </span>
         </div>
       </div>
 
-      {/* Main Canvas with Original 1209:1024 Board Proportions */}
-      <div 
+      {/* Proportional Board Canvas: fills column width cleanly without wide empty margins */}
+      <div
         ref={containerRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
-        className="h-[440px] sm:h-[500px] xl:h-[540px] w-full bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing p-2 select-none touch-none"
+        className="w-full aspect-[1209/1024] max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing p-1.5 select-none touch-none"
       >
-        <div 
+        <div
           className="w-full h-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -250,19 +249,17 @@ export const MapBoardSection: React.FC = () => {
           }}
         >
           {/* Proportional Board Container */}
-          <div 
-            className="relative select-none shadow-[0_20px_50px_rgba(37,52,81,0.22)] rounded-2xl overflow-visible border-4 border-white/95 bg-[#c8e6a2]"
+          <div
+            className="relative h-full max-w-full select-none shadow-[0_14px_34px_rgba(37,52,81,0.2)] rounded-xl overflow-visible border-[3px] border-white/95 bg-[#c8e6a2]"
             style={{
-              width: 'min(100%, calc(540px * (1209 / 1024)))',
-              maxHeight: '100%',
               aspectRatio: '1209 / 1024',
             }}
           >
-            {/* Custom Physical Board Map Image (Original Background Truth preserved 100%) */}
+            {/* Custom Physical Board Map Image */}
             <img
               src={mapSrc}
               alt="Political Territory Original Board Game Map"
-              className="w-full h-full block object-contain rounded-xl select-none pointer-events-none"
+              className="w-full h-full block object-contain rounded-lg select-none pointer-events-none"
               draggable={false}
               onError={(e) => {
                 const target = e.currentTarget;
@@ -273,7 +270,7 @@ export const MapBoardSection: React.FC = () => {
             />
 
             {/* Interactive Territory Markers Overlay */}
-            {filteredTerritories.map(t => {
+            {filteredTerritories.map((t: Territory) => {
               const owner = t.ownerId ? players.find(p => p.id === t.ownerId) : null;
               const isHovered = hoveredTerritoryId === t.id;
 
@@ -282,7 +279,10 @@ export const MapBoardSection: React.FC = () => {
                   key={t.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    openModal('TERRITORY_DETAIL', { territoryId: t.id });
+                    openModal('TERRITORY_DETAIL', {
+                      territoryId: t.id,
+                      playerId: claimTurnPlayer?.id || activePlayer?.id
+                    });
                   }}
                   onMouseEnter={() => setHoveredTerritoryId(t.id)}
                   onMouseLeave={() => setHoveredTerritoryId(null)}
@@ -299,17 +299,15 @@ export const MapBoardSection: React.FC = () => {
                   {/* Visual Marker Container */}
                   <div className={`w-full h-full transition-transform duration-150 ${isHovered ? 'scale-110' : ''}`}>
                     {owner ? (
-                      /* CLAIMED STATE: Player Logo completely covers the original spot on the map */
                       <div className="w-full h-full relative flex items-center justify-center rounded-full animate-in zoom-in-75 duration-200">
                         <PlayerLogo player={owner} size="full" />
                       </div>
                     ) : (
-                      /* UNCLAIMED STATE: Original spot on map image is visible, with subtle interactive hover ring */
                       <div className="w-full h-full rounded-full transition-all duration-150 hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/20 active:scale-95 flex items-center justify-center" />
                     )}
                   </div>
 
-                  {/* Clean Hover Tooltip (Authentic Territory Name & Stats without internal codes) */}
+                  {/* Clean Hover Tooltip */}
                   {isHovered && (
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-xl bg-[#253451] text-white shadow-xl pointer-events-none z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 flex flex-col items-center">
                       <div className="flex items-center gap-1.5 text-xs font-black">
@@ -331,7 +329,7 @@ export const MapBoardSection: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Optional Territory Name Label (Toggled via button, NEVER showing internal codes) */}
+                  {/* Optional Territory Name Label */}
                   {showLabels && !isHovered && (
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-1.5 py-0.5 rounded-md bg-white/95 border border-[#EAE9E3] text-[9px] font-bold text-[#253451] whitespace-nowrap shadow-soft-sm pointer-events-none max-w-[95px] truncate z-20">
                       {t.name}

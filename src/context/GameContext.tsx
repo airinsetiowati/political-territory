@@ -116,6 +116,10 @@ interface GameContextType {
 
   // Dice System & Turn Management
   activePlayer: Player;
+  claimTurnPlayer: Player | null;
+  isTurnLocked: boolean;
+  devicePlayerId: string;
+  setDevicePlayerId: (id: string) => void;
   diceState: DiceState;
   rollDice: (playerId?: string) => Promise<number>;
   nextTurn: () => void;
@@ -151,19 +155,71 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const DEFAULT_DICE_STATE: DiceState = {
     currentValue: null,
     isRolling: false,
+    rollingPlayerId: null,
     lastRolledByPlayerId: null,
     lastRolledAtRound: null,
+    lastRolledAtTurn: null,
     hasRolledThisTurn: false,
+    turnPhase: 'waiting_roll',
     history: [],
   };
   const [diceState, setDiceState] = useState<DiceState>(() => getLocalState('pt_dice', DEFAULT_DICE_STATE));
+  const [devicePlayerId, setDevicePlayerIdState] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      return window.sessionStorage.getItem('pt_device_player_id') || 'all';
+    }
+    return 'all';
+  });
+
+  const setDevicePlayerId = (id: string) => {
+    setDevicePlayerIdState(id);
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem('pt_device_player_id', id);
+    }
+  };
 
   const [latestIncomeSummary, setLatestIncomeSummary] = useState<IncomeDistributionSummary | null>(null);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [activeModalData, setActiveModalData] = useState<any>(null);
 
-  // Active turn player resolution
+  // Active turn player resolution (strictly by player ID)
   const activePlayer = players.find(p => p.id === (settings.activePlayerId || players[0]?.id)) || players[0] || INITIAL_PLAYERS[0];
+
+  // Player who rolled the dice and owns the active claim phase (strictly by player ID)
+  const claimTurnPlayer = (diceState.hasRolledThisTurn && diceState.lastRolledByPlayerId)
+    ? (players.find(p => p.id === diceState.lastRolledByPlayerId) || null)
+    : null;
+
+  // Turn cannot switch while dice animation is running or a rolled claim is pending
+  const isTurnLocked = Boolean(
+    diceState.isRolling ||
+    (diceState.hasRolledThisTurn && (diceState.turnPhase ?? 'claim_pending') === 'claim_pending')
+  );
+
+  // Keep devicePlayerId valid if player roster changes
+  useEffect(() => {
+    if (devicePlayerId !== 'all' && players.length > 0 && !players.some(p => p.id === devicePlayerId)) {
+      setDevicePlayerId('all');
+    }
+  }, [devicePlayerId, players]);
+
+  // Synchronous refs for async rollDice & race-free checks
+  const isRollingRef = useRef(false);
+  const isClaimingRef = useRef(false);
+  const playersRef = useRef(players);
+  const territoriesRef = useRef(territories);
+  const policyCardsRef = useRef(policyCards);
+  const settingsRef = useRef(settings);
+  const diceStateRef = useRef(diceState);
+  const logsRef = useRef(logs);
+  const devicePlayerIdRef = useRef(devicePlayerId);
+  playersRef.current = players;
+  territoriesRef.current = territories;
+  policyCardsRef.current = policyCards;
+  settingsRef.current = settings;
+  diceStateRef.current = diceState;
+  logsRef.current = logs;
+  devicePlayerIdRef.current = devicePlayerId;
 
   // Undo history stack
   const [undoHistory, setUndoHistory] = useState<any[]>([]);
@@ -175,29 +231,104 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time multi-tab & multiplayer sync
   useEffect(() => {
-    if (!gameSyncChannel) return;
+    const applyStateSync = (payload: any) => {
+      if (!payload) return;
+      if (payload.players) {
+        playersRef.current = payload.players;
+        setPlayersState(payload.players);
+      }
+      if (payload.territories) {
+        territoriesRef.current = payload.territories;
+        setTerritoriesState(payload.territories);
+      }
+      if (payload.policyCards) {
+        policyCardsRef.current = payload.policyCards;
+        setPolicyCardsState(payload.policyCards);
+      }
+      if (payload.crisisCards) setCrisisCardsState(payload.crisisCards);
+      if (payload.missionCards) setMissionCardsState(payload.missionCards);
+      if (payload.opportunityCards) setOpportunityCardsState(payload.opportunityCards);
+      if (payload.logs) {
+        logsRef.current = payload.logs;
+        setLogsState(payload.logs);
+      }
+      if (payload.settings) {
+        settingsRef.current = payload.settings;
+        setSettingsState(payload.settings);
+      }
+      if (payload.economyConfig) setEconomyConfigState(payload.economyConfig);
+      if (payload.diceState) {
+        diceStateRef.current = payload.diceState;
+        setDiceState(payload.diceState);
+      }
+    };
 
     const handleSyncMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data || !data.type) return;
 
       if (data.type === 'DICE_START_ROLL') {
-        setDiceState(prev => ({ ...prev, isRolling: true }));
+        const nextDice: DiceState = {
+          ...diceStateRef.current,
+          isRolling: true,
+          rollingPlayerId: data.payload?.playerId || diceStateRef.current.rollingPlayerId || null,
+          turnPhase: 'rolling',
+        };
+        diceStateRef.current = nextDice;
+        setDiceState(nextDice);
         soundEffects.playDiceRoll();
       } else if (data.type === 'DICE_ROLLED') {
         if (data.payload?.diceState) {
+          diceStateRef.current = data.payload.diceState;
           setDiceState(data.payload.diceState);
+          if (data.payload.activePlayerId) {
+            const nextSettings: GameSettings = {
+              ...settingsRef.current,
+              activePlayerId: data.payload.activePlayerId,
+              currentTurn: data.payload.currentTurn ?? settingsRef.current.currentTurn,
+              currentRound: data.payload.currentRound ?? settingsRef.current.currentRound,
+            };
+            settingsRef.current = nextSettings;
+            setSettingsState(nextSettings);
+          }
+          if (data.payload.logs) {
+            logsRef.current = data.payload.logs;
+            setLogsState(data.payload.logs);
+          }
           soundEffects.playDiceLand();
         }
       } else if (data.type === 'TURN_CHANGED') {
         if (data.payload?.activePlayerId) {
-          setSettingsState(s => ({
-            ...s,
+          const nextSettings: GameSettings = {
+            ...settingsRef.current,
             activePlayerId: data.payload.activePlayerId,
-            currentTurn: data.payload.currentTurn,
-          }));
-          setDiceState(prev => ({ ...prev, hasRolledThisTurn: false, isRolling: false }));
+            currentTurn: data.payload.currentTurn ?? settingsRef.current.currentTurn,
+            currentRound: data.payload.currentRound ?? settingsRef.current.currentRound,
+          };
+          settingsRef.current = nextSettings;
+          setSettingsState(nextSettings);
+
+          const nextDice: DiceState = data.payload.diceState || {
+            ...diceStateRef.current,
+            currentValue: null,
+            lastRolledByPlayerId: null,
+            lastRolledAtRound: null,
+            lastRolledAtTurn: null,
+            hasRolledThisTurn: false,
+            isRolling: false,
+            rollingPlayerId: null,
+            turnPhase: 'waiting_roll',
+          };
+          diceStateRef.current = nextDice;
+          setDiceState(nextDice);
+
+          if (data.payload.logs) {
+            logsRef.current = data.payload.logs;
+            setLogsState(data.payload.logs);
+          }
         }
+      } else if (data.type === 'STATE_SYNC') {
+        applyStateSync(data.payload);
       }
     };
 
@@ -206,17 +337,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const handleStorageEvent = (e: StorageEvent) => {
-      if (e.key === 'pt_dice' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
+      if (!e.newValue) return;
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (e.key === 'pt_dice') {
+          diceStateRef.current = parsed;
           setDiceState(parsed);
-        } catch {}
-      } else if (e.key === 'pt_settings' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
+        } else if (e.key === 'pt_settings') {
+          settingsRef.current = parsed;
           setSettingsState(parsed);
-        } catch {}
-      }
+        } else if (e.key === 'pt_players') {
+          playersRef.current = parsed;
+          setPlayersState(parsed);
+        } else if (e.key === 'pt_territories') {
+          territoriesRef.current = parsed;
+          setTerritoriesState(parsed);
+        } else if (e.key === 'pt_policy_cards') {
+          policyCardsRef.current = parsed;
+          setPolicyCardsState(parsed);
+        } else if (e.key === 'pt_crisis_cards') setCrisisCardsState(parsed);
+        else if (e.key === 'pt_mission_cards') setMissionCardsState(parsed);
+        else if (e.key === 'pt_opp_cards') setOpportunityCardsState(parsed);
+        else if (e.key === 'pt_logs') {
+          logsRef.current = parsed;
+          setLogsState(parsed);
+        } else if (e.key === 'pt_economy') setEconomyConfigState(parsed);
+      } catch {}
     };
 
     if (typeof window !== 'undefined') {
@@ -289,6 +435,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const undoLastAction = () => {
     if (undoHistory.length === 0) return;
     const [previous, ...rest] = undoHistory;
+    playersRef.current = previous.players;
+    territoriesRef.current = previous.territories;
+    policyCardsRef.current = previous.policyCards;
+    logsRef.current = previous.logs;
+    settingsRef.current = previous.settings;
+    if (previous.diceState) diceStateRef.current = previous.diceState;
+
     setPlayersState(previous.players);
     setTerritoriesState(previous.territories);
     setPolicyCardsState(previous.policyCards);
@@ -299,6 +452,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettingsState(previous.settings);
     if (previous.diceState) setDiceState(previous.diceState);
     setUndoHistory(rest);
+
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: {
+        players: previous.players,
+        territories: previous.territories,
+        policyCards: previous.policyCards,
+        crisisCards: previous.crisisCards,
+        missionCards: previous.missionCards,
+        opportunityCards: previous.opportunityCards,
+        logs: previous.logs,
+        settings: previous.settings,
+        diceState: previous.diceState,
+      }
+    });
     soundEffects.playClick();
   };
 
@@ -542,71 +710,81 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     soundEffects.playClaim();
 
     // 1. Initialize fresh temporary session: clean territory ownership
-    setTerritoriesState(DEFAULT_TERRITORIES.map(t => ({
+    const resetTerritories = DEFAULT_TERRITORIES.map(t => ({
       ...t,
       ownerId: null,
       claimedAtRound: null,
       claimedAtTime: undefined,
       activeBonuses: [],
-    })));
+    }));
+    setTerritoriesState(resetTerritories);
 
     // 2. Reset policy cards usage
-    setPolicyCardsState(DEFAULT_POLICY_CARDS.map(c => ({
+    const resetPolicies = DEFAULT_POLICY_CARDS.map(c => ({
       ...c,
       isUsed: false,
       usedByPlayerId: undefined,
       usedAtRound: undefined,
-    })));
+    }));
+    setPolicyCardsState(resetPolicies);
 
     // 3. Reset crisis cards
-    setCrisisCardsState(DEFAULT_CRISIS_CARDS.map(c => ({
+    const resetCrises = DEFAULT_CRISIS_CARDS.map(c => ({
       ...c,
       isUsed: false,
       usedByPlayerId: undefined,
       selectedOption: undefined,
       usedAtRound: undefined,
-    })));
+    }));
+    setCrisisCardsState(resetCrises);
 
     // 4. Reset mission cards
-    setMissionCardsState(DEFAULT_MISSION_CARDS.map(m => ({
+    const resetMissions = DEFAULT_MISSION_CARDS.map(m => ({
       ...m,
-      status: 'available',
+      status: 'available' as const,
       assignedPlayerId: undefined,
       isUsed: false,
-    })));
+    }));
+    setMissionCardsState(resetMissions);
 
     // 5. Reset opportunity cards
-    setOpportunityCardsState(DEFAULT_OPPORTUNITY_CARDS.map(o => ({
+    const resetOpps = DEFAULT_OPPORTUNITY_CARDS.map(o => ({
       ...o,
       isUsed: false,
       assignedPlayerId: undefined,
-    })));
+    }));
+    setOpportunityCardsState(resetOpps);
 
     // 6. Reset timer, turns, and activate
     const intervalSecs = settings.economicIntervalSeconds || 300;
     const initialActivePlayerId = players[0]?.id || 'red';
-    setSettingsState(s => ({
-      ...s,
+    const nextSettings: GameSettings = {
+      ...settings,
       status: 'active',
       isTimerRunning: true,
       timerRemainingSeconds: intervalSecs,
       currentRound: 1,
       currentTurn: 1,
       activePlayerId: initialActivePlayerId,
-    }));
+    };
+    setSettingsState(nextSettings);
 
     // Reset dice state
-    setDiceState({
+    const freshDiceState: DiceState = {
       currentValue: null,
       isRolling: false,
+      rollingPlayerId: null,
       lastRolledByPlayerId: null,
       lastRolledAtRound: null,
+      lastRolledAtTurn: null,
       hasRolledThisTurn: false,
+      turnPhase: 'waiting_roll',
       history: [],
-    });
+    };
+    setDiceState(freshDiceState);
 
     // 7. Clear old logs and start fresh match log
-    setLogsState([
+    const initialLogs: GameLog[] = [
       {
         id: `log-${Date.now()}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -614,7 +792,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         type: 'game_control',
         description: `Pertandingan resmi dimulai dengan ${players.length} pemain (${players.map(p => `${p.name} [${p.color.toUpperCase()}: ${p.budget} GB]`).join(', ')}). Build, Govern, Prosper!`,
       }
-    ]);
+    ];
+    setLogsState(initialLogs);
+
+    saveLocalState('pt_players', players);
+    saveLocalState('pt_territories', resetTerritories);
+    saveLocalState('pt_policy_cards', resetPolicies);
+    saveLocalState('pt_crisis_cards', resetCrises);
+    saveLocalState('pt_mission_cards', resetMissions);
+    saveLocalState('pt_opp_cards', resetOpps);
+    saveLocalState('pt_settings', nextSettings);
+    saveLocalState('pt_dice', freshDiceState);
+    saveLocalState('pt_logs', initialLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: {
+        players,
+        territories: resetTerritories,
+        policyCards: resetPolicies,
+        crisisCards: resetCrises,
+        missionCards: resetMissions,
+        opportunityCards: resetOpps,
+        settings: nextSettings,
+        diceState: freshDiceState,
+        logs: initialLogs,
+      }
+    });
   };
 
   const pauseGame = () => {
@@ -644,71 +847,91 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Clear players back to initial setup players with default GB and 0 VP
     const defaultGb = 20;
-    setPlayersState(INITIAL_PLAYERS.map(p => ({
+    const resetPolicies = DEFAULT_POLICY_CARDS.map(c => ({
+      ...c,
+      isUsed: false,
+      usedByPlayerId: undefined,
+      usedAtRound: undefined,
+    }));
+    const resetCrises = DEFAULT_CRISIS_CARDS.map(c => ({
+      ...c,
+      isUsed: false,
+      usedByPlayerId: undefined,
+      selectedOption: undefined,
+      usedAtRound: undefined,
+    }));
+    const resetMissions = DEFAULT_MISSION_CARDS.map(m => ({
+      ...m,
+      status: 'available' as const,
+      assignedPlayerId: undefined,
+      isUsed: false,
+    }));
+    const resetOpps = DEFAULT_OPPORTUNITY_CARDS.map(o => ({
+      ...o,
+      isUsed: false,
+      assignedPlayerId: undefined,
+    }));
+    const resetPlayers = INITIAL_PLAYERS.map(p => ({
       ...p,
       budget: defaultGb,
       victoryPoints: 0,
       territoryIds: [],
       activeOpportunities: [],
       activeMissions: [],
-    })));
-
-    // 3. Clear territory ownership
-    setTerritoriesState(DEFAULT_TERRITORIES.map(t => ({
+    }));
+    const resetTerritories = DEFAULT_TERRITORIES.map(t => ({
       ...t,
       ownerId: null,
       claimedAtRound: null,
       claimedAtTime: undefined,
       activeBonuses: [],
-    })));
+    }));
 
-    // 4. Clear used Policy Cards
-    setPolicyCardsState(DEFAULT_POLICY_CARDS.map(c => ({
-      ...c,
-      isUsed: false,
-      usedByPlayerId: undefined,
-      usedAtRound: undefined,
-    })));
-
-    // 5. Clear used Crisis Cards
-    setCrisisCardsState(DEFAULT_CRISIS_CARDS.map(c => ({
-      ...c,
-      isUsed: false,
-      usedByPlayerId: undefined,
-      selectedOption: undefined,
-      usedAtRound: undefined,
-    })));
-
-    // 6. Clear active Missions
-    setMissionCardsState(DEFAULT_MISSION_CARDS.map(m => ({
-      ...m,
-      status: 'available',
-      assignedPlayerId: undefined,
-      isUsed: false,
-    })));
-
-    // 7. Clear active Opportunities
-    setOpportunityCardsState(DEFAULT_OPPORTUNITY_CARDS.map(o => ({
-      ...o,
-      isUsed: false,
-      assignedPlayerId: undefined,
-    })));
+    setPlayersState(resetPlayers);
+    setTerritoriesState(resetTerritories);
+    setPolicyCardsState(resetPolicies);
+    setCrisisCardsState(resetCrises);
+    setMissionCardsState(resetMissions);
+    setOpportunityCardsState(resetOpps);
 
     // 8. Clear Game History
     setLogsState([]);
 
     // 9. Reset settings & stop timer, return to Game Setup
-    setSettingsState({
+    const resetSettings: GameSettings = {
       ...DEFAULT_SETTINGS,
       status: 'setup',
       isTimerRunning: false,
       currentRound: 1,
       timerRemainingSeconds: DEFAULT_SETTINGS.economicIntervalSeconds,
-    });
+    };
+    playersRef.current = resetPlayers;
+    territoriesRef.current = resetTerritories;
+    policyCardsRef.current = resetPolicies;
+    logsRef.current = [];
+    settingsRef.current = resetSettings;
+    diceStateRef.current = DEFAULT_DICE_STATE;
+
+    setSettingsState(resetSettings);
     setDiceState(DEFAULT_DICE_STATE);
     setLatestIncomeSummary(null);
     setUndoHistory([]);
     closeModal();
+
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: {
+        players: resetPlayers,
+        territories: resetTerritories,
+        policyCards: resetPolicies,
+        crisisCards: resetCrises,
+        missionCards: resetMissions,
+        opportunityCards: resetOpps,
+        settings: resetSettings,
+        diceState: DEFAULT_DICE_STATE,
+        logs: [],
+      }
+    });
   };
 
   // Player Management
@@ -735,9 +958,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removePlayer = (id: string) => {
     if (players.length <= 2 && settings.status === 'active') return;
     takeSnapshot();
-    setPlayersState(prev => prev.filter(p => p.id !== id));
+    const remainingPlayers = players.filter(p => p.id !== id);
+    setPlayersState(remainingPlayers);
     // Release any territories owned by this player
     setTerritoriesState(prev => prev.map(t => t.ownerId === id ? { ...t, ownerId: null } : t));
+
+    if (remainingPlayers.length > 0 && (settings.activePlayerId === id || diceState.lastRolledByPlayerId === id)) {
+      const nextActiveId = remainingPlayers[0].id;
+      setSettingsState(s => ({ ...s, activePlayerId: nextActiveId }));
+      setDiceState(d => ({
+        ...d,
+        currentValue: null,
+        isRolling: false,
+        rollingPlayerId: null,
+        lastRolledByPlayerId: null,
+        lastRolledAtRound: null,
+        lastRolledAtTurn: null,
+        hasRolledThisTurn: false,
+        turnPhase: 'waiting_roll',
+      }));
+    }
     soundEffects.playClick();
   };
 
@@ -786,16 +1026,71 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Territory Claim Logic
   const claimTerritory = (playerId: string, territoryId: string, cardCode: string): { success: boolean; message: string } => {
-    takeSnapshot();
-    const player = players.find(p => p.id === playerId);
-    if (!player) return { success: false, message: 'Pemain yang dipilih tidak valid.' };
+    if (isClaimingRef.current) {
+      return { success: false, message: 'Proses klaim sedang diproses. Mohon tunggu sebentar.' };
+    }
 
-    const territory = territories.find(t => t.id === territoryId);
+    // Read latest state from refs + shared storage to stay race-free in multiplayer
+    const latestStorageDice = getLocalState<DiceState>('pt_dice', diceStateRef.current);
+    const latestStorageSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current);
+    const currentSettings = latestStorageSettings || settingsRef.current;
+    const currentDice = latestStorageDice || diceStateRef.current;
+    const currentPlayers = playersRef.current;
+    const currentTerritories = territoriesRef.current;
+    const currentPolicyCards = policyCardsRef.current;
+    const currentLogs = logsRef.current;
+    const currentDeviceId = devicePlayerIdRef.current;
+
+    if (currentSettings.status !== 'active') {
+      return { success: false, message: 'Pertandingan belum aktif. Silakan mulai permainan terlebih dahulu.' };
+    }
+
+    if (currentDice.isRolling || isRollingRef.current) {
+      return { success: false, message: 'Animasi lempar dadu masih berlangsung. Tunggu hingga hasil dadu muncul.' };
+    }
+
+    const currentActive = currentPlayers.find(p => p.id === (currentSettings.activePlayerId || currentPlayers[0]?.id)) || currentPlayers[0];
+
+    // Enforce Roll Dice before Claim (Requirement 1, 2, 3, 4)
+    if (!currentDice.hasRolledThisTurn || !currentDice.lastRolledByPlayerId) {
+      return {
+        success: false,
+        message: `${currentActive?.name || 'Pemain aktif'} harus melakukan Roll Dice terlebih dahulu sebelum mengklaim wilayah.`
+      };
+    }
+
+    const rollerId = currentDice.lastRolledByPlayerId;
+    const roller = currentPlayers.find(p => p.id === rollerId);
+    if (!roller) {
+      return { success: false, message: 'Pemain pelempar dadu tidak ditemukan.' };
+    }
+
+    // Prevent other players from taking over the claim process (Requirement 7)
+    if (playerId && playerId !== rollerId) {
+      return {
+        success: false,
+        message: `Kepemilikan wilayah hanya dapat diberikan kepada pemain yang melempar dadu (${roller.name}). Pemain lain tidak dapat mengambil alih proses klaim.`
+      };
+    }
+
+    if (currentDeviceId !== 'all' && currentDeviceId !== rollerId) {
+      const devicePlayer = currentPlayers.find(p => p.id === currentDeviceId);
+      return {
+        success: false,
+        message: `Akses ditolak (${devicePlayer?.name || currentDeviceId}). Hanya ${roller.name} atau Meja Bersama yang dapat menyelesaikan klaim pada giliran ini.`
+      };
+    }
+
+    // Ownership automatically bound to the player who rolled the dice (Requirement 3)
+    const effectivePlayerId = rollerId;
+    const player = roller;
+
+    const territory = currentTerritories.find(t => t.id === territoryId);
     if (!territory) return { success: false, message: 'Wilayah yang dipilih tidak valid.' };
 
     // 1. Territory ownership validation
     if (territory.ownerId) {
-      const currentOwner = players.find(p => p.id === territory.ownerId);
+      const currentOwner = currentPlayers.find(p => p.id === territory.ownerId);
       return { 
         success: false, 
         message: `Wilayah "${territory.name}" sudah dikuasai oleh pemain ${currentOwner?.name || territory.ownerId.toUpperCase()}!` 
@@ -807,7 +1102,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const normalize = (s: string) => s.replace(/[\s\-_]/g, '').toUpperCase();
     const inputNorm = normalize(cleanInput);
 
-    let card = policyCards.find(c => {
+    let card = currentPolicyCards.find(c => {
       if (c.code.toUpperCase() === cleanInput) return true;
       if (normalize(c.code) === inputNorm) return true;
       const cDigits = c.code.match(/\d+/)?.[0];
@@ -823,7 +1118,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Handle wildcard matching (e.g. WTR-ANY, WATER-ANY, SBS-ANY)
     if (!card && (cleanInput.includes('ANY') || cleanInput.startsWith('ANY'))) {
       const catOrPrefix = cleanInput.replace(/[^A-Z]/g, '').replace('ANY', '');
-      card = policyCards.find(c => {
+      card = currentPolicyCards.find(c => {
         if (c.isUsed && !c.isReusable) return false;
         if (catOrPrefix === 'SBS' || catOrPrefix === 'FREE') return c.isFreeChoice || c.category === 'free_choice';
         if (catOrPrefix === 'WTR' || catOrPrefix === 'WATER') return c.category === 'water';
@@ -870,66 +1165,142 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // 7. Execute Claim!
-    soundEffects.playClaim();
+    // 7. Execute Claim atomically!
+    isClaimingRef.current = true;
+    try {
+      takeSnapshot();
+      soundEffects.playClaim();
 
-    // 1. Deduct cost & add territory to player
-    setPlayersState(prev => prev.map(p => {
-      if (p.id === playerId) {
-        return {
-          ...p,
-          budget: p.budget - claimCost,
-          territoryIds: [...p.territoryIds, territoryId],
-        };
-      }
-      return p;
-    }));
+      const nowTime = new Date().toLocaleTimeString();
 
-    // 2. Mark territory as claimed
-    setTerritoriesState(prev => prev.map(t => {
-      if (t.id === territoryId) {
-        return {
-          ...t,
-          ownerId: playerId,
-          claimedAtRound: settings.currentRound,
-          claimedAtTime: new Date().toLocaleTimeString(),
-        };
-      }
-      return t;
-    }));
+      // 1. Deduct cost & add territory to the rolling player (by ID)
+      const updatedPlayers = currentPlayers.map(p => {
+        if (p.id === effectivePlayerId) {
+          return {
+            ...p,
+            budget: p.budget - claimCost,
+            territoryIds: p.territoryIds.includes(territoryId) ? p.territoryIds : [...p.territoryIds, territoryId],
+          };
+        }
+        return p;
+      });
 
-    // 3. Mark policy card as used
-    setPolicyCardsState(prev => prev.map(c => {
-      if (c.id === card!.id) {
-        return {
-          ...c,
-          isUsed: true,
-          usedByPlayerId: playerId,
-          usedAtRound: settings.currentRound,
-        };
-      }
-      return c;
-    }));
+      // 2. Mark territory as claimed by effectivePlayerId
+      const updatedTerritories = currentTerritories.map(t => {
+        if (t.id === territoryId) {
+          return {
+            ...t,
+            ownerId: effectivePlayerId,
+            claimedAtRound: currentSettings.currentRound,
+            claimedAtTime: nowTime,
+          };
+        }
+        return t;
+      });
 
-    // 4. Record in Game History
-    addLog(
-      'claim',
-      `${player.name} berhasil mengklaim ${territory.name} (${territory.category.toUpperCase()}) seharga ${claimCost} GB menggunakan kartu ${card.code}. Base +${basePoints} VP, +${baseIncome} GB/siklus.`,
-      {
-        playerId,
+      // 3. Mark policy card as used by effectivePlayerId
+      const updatedPolicyCards = currentPolicyCards.map(c => {
+        if (c.id === card!.id) {
+          return {
+            ...c,
+            isUsed: true,
+            usedByPlayerId: effectivePlayerId,
+            usedAtRound: currentSettings.currentRound,
+          };
+        }
+        return c;
+      });
+
+      // 4. Record claim in Game History
+      const claimLogEntry: GameLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        round: currentSettings.currentRound,
+        type: 'claim',
+        description: `${player.name} berhasil mengklaim ${territory.name} (${territory.category.toUpperCase()}) seharga ${claimCost} GB menggunakan kartu ${card.code}. Base +${basePoints} VP, +${baseIncome} GB/siklus.`,
+        playerId: effectivePlayerId,
         playerName: player.name,
         playerColor: player.color,
         gbChange: -claimCost,
         pointChange: basePoints,
         territoryId,
         cardCode: card.code,
-      }
-    );
+      };
 
-    return {
-      success: true,
-      message: `Berhasil mengklaim ${territory.name}! Terpotong ${claimCost} GB (+${basePoints} VP).`
-    };
+      // 5. After claim completes, advance to the next player in turn order (Requirement 5)
+      const rollerIndex = updatedPlayers.findIndex(p => p.id === effectivePlayerId);
+      const nextIndex = rollerIndex >= 0 ? (rollerIndex + 1) % updatedPlayers.length : 0;
+      const nextPlayer = updatedPlayers[nextIndex];
+      const nextTurnNum = (currentSettings.currentTurn || 1) + 1;
+
+      const updatedSettings: GameSettings = {
+        ...currentSettings,
+        activePlayerId: nextPlayer.id,
+        currentTurn: nextTurnNum,
+      };
+
+      const updatedDiceState: DiceState = {
+        ...currentDice,
+        currentValue: null,
+        hasRolledThisTurn: false,
+        isRolling: false,
+        rollingPlayerId: null,
+        lastRolledByPlayerId: null,
+        lastRolledAtRound: null,
+        lastRolledAtTurn: null,
+        turnPhase: 'waiting_roll',
+      };
+
+      const turnLogEntry: GameLog = {
+        id: `log-${Date.now() + 1}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        round: currentSettings.currentRound,
+        type: 'game_control',
+        description: `Giliran #${nextTurnNum}: Sekarang giliran ${nextPlayer.name} (${nextPlayer.color.toUpperCase()}).`,
+      };
+      const updatedLogs: GameLog[] = [turnLogEntry, claimLogEntry, ...currentLogs];
+
+      // Update synchronous refs immediately before React state setters
+      playersRef.current = updatedPlayers;
+      territoriesRef.current = updatedTerritories;
+      policyCardsRef.current = updatedPolicyCards;
+      logsRef.current = updatedLogs;
+      settingsRef.current = updatedSettings;
+      diceStateRef.current = updatedDiceState;
+
+      setPlayersState(updatedPlayers);
+      setTerritoriesState(updatedTerritories);
+      setPolicyCardsState(updatedPolicyCards);
+      setLogsState(updatedLogs);
+      setSettingsState(updatedSettings);
+      setDiceState(updatedDiceState);
+
+      saveLocalState('pt_players', updatedPlayers);
+      saveLocalState('pt_territories', updatedTerritories);
+      saveLocalState('pt_policy_cards', updatedPolicyCards);
+      saveLocalState('pt_logs', updatedLogs);
+      saveLocalState('pt_settings', updatedSettings);
+      saveLocalState('pt_dice', updatedDiceState);
+
+      broadcastGameEvent({
+        type: 'STATE_SYNC',
+        payload: {
+          players: updatedPlayers,
+          territories: updatedTerritories,
+          policyCards: updatedPolicyCards,
+          logs: updatedLogs,
+          settings: updatedSettings,
+          diceState: updatedDiceState,
+        }
+      });
+
+      return {
+        success: true,
+        message: `Berhasil mengklaim ${territory.name} untuk ${player.name}! Terpotong ${claimCost} GB (+${basePoints} VP).`
+      };
+    } finally {
+      isClaimingRef.current = false;
+    }
   };
 
   const revokeTerritoryClaim = (territoryId: string, refundGB: boolean = false): { success: boolean; message: string } => {
@@ -1586,153 +1957,285 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Dice System & Turn Management
   const rollDice = async (playerId?: string): Promise<number> => {
-    if (settings.status !== 'active') {
+    const currentSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const currentPlayers = playersRef.current;
+    const currentDice = getLocalState<DiceState>('pt_dice', diceStateRef.current) || diceStateRef.current;
+    const currentDeviceId = devicePlayerIdRef.current;
+
+    if (currentSettings.status !== 'active') {
       throw new Error('Pertandingan belum aktif. Silakan mulai game terlebih dahulu.');
     }
 
-    if (diceState.isRolling) {
-      return diceState.currentValue || 1;
+    if (isRollingRef.current || currentDice.isRolling) {
+      return currentDice.currentValue || 1;
     }
 
-    const currentActive = players.find(p => p.id === (settings.activePlayerId || players[0]?.id)) || players[0] || INITIAL_PLAYERS[0];
+    const currentActive = currentPlayers.find(p => p.id === (currentSettings.activePlayerId || currentPlayers[0]?.id)) || currentPlayers[0] || INITIAL_PLAYERS[0];
+    if (!currentActive) {
+      throw new Error('Pemain aktif tidak ditemukan.');
+    }
+
+    if (currentDeviceId !== 'all' && currentDeviceId !== currentActive.id) {
+      throw new Error(`Bukan giliran perangkat ini. Giliran saat ini milik ${currentActive.name} (${currentActive.color.toUpperCase()}).`);
+    }
+
     if (playerId && playerId !== currentActive.id) {
       throw new Error(`Bukan giliran Anda. Giliran saat ini milik ${currentActive.name} (${currentActive.color.toUpperCase()}).`);
     }
 
-    if (diceState.hasRolledThisTurn) {
-      throw new Error(`${currentActive.name} sudah melempar dadu pada giliran ini. Silakan oper giliran ke pemain berikutnya.`);
+    const currentTurnNum = currentSettings.currentTurn || 1;
+    const currentRoundNum = currentSettings.currentRound || 1;
+
+    if (
+      currentDice.hasRolledThisTurn ||
+      (currentDice.lastRolledAtTurn === currentTurnNum && currentDice.lastRolledByPlayerId === currentActive.id)
+    ) {
+      throw new Error(`${currentActive.name} sudah melempar dadu pada giliran ini. Selesaikan atau lewati klaim terlebih dahulu.`);
     }
 
+    isRollingRef.current = true;
     takeSnapshot();
 
-    // 1. Enter rolling animation state
-    setDiceState(prev => ({ ...prev, isRolling: true }));
-    broadcastGameEvent({
-      type: 'DICE_START_ROLL',
-      payload: { playerId: currentActive.id }
-    });
-    soundEffects.playDiceRoll();
+    try {
+      // 1. Enter rolling animation state and lock player identity by ID
+      const rollingDiceState: DiceState = {
+        ...currentDice,
+        isRolling: true,
+        rollingPlayerId: currentActive.id,
+        turnPhase: 'rolling',
+      };
+      diceStateRef.current = rollingDiceState;
+      setDiceState(rollingDiceState);
+      saveLocalState('pt_dice', rollingDiceState);
+      broadcastGameEvent({
+        type: 'DICE_START_ROLL',
+        payload: {
+          playerId: currentActive.id,
+          turn: currentTurnNum,
+          round: currentRoundNum,
+        }
+      });
+      soundEffects.playDiceRoll();
 
-    // 2. High-entropy cryptographically secure random number generator (1 to 6)
-    const randomBuffer = new Uint32Array(1);
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-      window.crypto.getRandomValues(randomBuffer);
-    } else {
-      randomBuffer[0] = Math.floor(Math.random() * 0xFFFFFFFF);
-    }
-    const rollValue = (randomBuffer[0] % 6) + 1;
-
-    // 3. Animation duration delay (850ms) to allow dice roll animation to play out
-    await new Promise(resolve => setTimeout(resolve, 850));
-
-    const currentTurnNum = settings.currentTurn || 1;
-    const currentRoundNum = settings.currentRound || 1;
-
-    const newLog: DiceRollLog = {
-      id: `dice-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      playerId: currentActive.id,
-      playerName: currentActive.name,
-      playerColor: currentActive.color,
-      value: rollValue,
-      round: currentRoundNum,
-      turn: currentTurnNum,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    };
-
-    const updatedDiceState: DiceState = {
-      currentValue: rollValue,
-      isRolling: false,
-      lastRolledByPlayerId: currentActive.id,
-      lastRolledAtRound: currentRoundNum,
-      hasRolledThisTurn: true,
-      history: [newLog, ...(diceState.history || [])].slice(0, 50),
-    };
-
-    setDiceState(updatedDiceState);
-    saveLocalState('pt_dice', updatedDiceState);
-
-    broadcastGameEvent({
-      type: 'DICE_ROLLED',
-      payload: {
-        diceState: updatedDiceState,
-        rollLog: newLog,
+      // 2. High-entropy cryptographically secure random number generator (1 to 6)
+      const randomBuffer = new Uint32Array(1);
+      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        window.crypto.getRandomValues(randomBuffer);
+      } else {
+        randomBuffer[0] = Math.floor(Math.random() * 0xFFFFFFFF);
       }
-    });
+      const rollValue = (randomBuffer[0] % 6) + 1;
 
-    addLog('dice_roll', `${currentActive.name} melempar dadu dan mendapatkan angka [${rollValue}] pada Giliran #${currentTurnNum}.`, {
-      playerId: currentActive.id,
-      playerName: currentActive.name,
-      playerColor: currentActive.color,
-      diceValue: rollValue,
-    });
+      // 3. Animation duration delay (850ms) to allow dice roll animation to play out
+      await new Promise(resolve => setTimeout(resolve, 850));
 
-    soundEffects.playDiceLand();
-    return rollValue;
+      if (settingsRef.current.status !== 'active' || !diceStateRef.current.isRolling) {
+        return diceStateRef.current.currentValue || rollValue;
+      }
+
+      const latestDice = diceStateRef.current;
+      const latestLogs = logsRef.current;
+
+      const newLog: DiceRollLog = {
+        id: `dice-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        playerId: currentActive.id,
+        playerName: currentActive.name,
+        playerColor: currentActive.color,
+        value: rollValue,
+        round: currentRoundNum,
+        turn: currentTurnNum,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      };
+
+      const updatedDiceState: DiceState = {
+        currentValue: rollValue,
+        isRolling: false,
+        rollingPlayerId: null,
+        lastRolledByPlayerId: currentActive.id,
+        lastRolledAtRound: currentRoundNum,
+        lastRolledAtTurn: currentTurnNum,
+        hasRolledThisTurn: true,
+        turnPhase: 'claim_pending',
+        history: [newLog, ...(latestDice.history || [])].slice(0, 50),
+      };
+
+      const diceLogEntry: GameLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        round: currentRoundNum,
+        type: 'dice_roll',
+        description: `${currentActive.name} melempar dadu dan mendapatkan angka [${rollValue}] pada Giliran #${currentTurnNum}.`,
+        playerId: currentActive.id,
+        playerName: currentActive.name,
+        playerColor: currentActive.color,
+        diceValue: rollValue,
+      };
+      const updatedLogs = [diceLogEntry, ...latestLogs];
+
+      diceStateRef.current = updatedDiceState;
+      logsRef.current = updatedLogs;
+      setDiceState(updatedDiceState);
+      setLogsState(updatedLogs);
+      saveLocalState('pt_dice', updatedDiceState);
+      saveLocalState('pt_logs', updatedLogs);
+
+      broadcastGameEvent({
+        type: 'DICE_ROLLED',
+        payload: {
+          diceState: updatedDiceState,
+          rollLog: newLog,
+          activePlayerId: currentActive.id,
+          currentTurn: currentTurnNum,
+          currentRound: currentRoundNum,
+          logs: updatedLogs,
+        }
+      });
+
+      soundEffects.playDiceLand();
+      return rollValue;
+    } finally {
+      isRollingRef.current = false;
+    }
   };
 
   const nextTurn = () => {
-    if (players.length === 0) return;
-    takeSnapshot();
-    const currentActiveId = settings.activePlayerId || players[0]?.id;
-    const currentIndex = players.findIndex(p => p.id === currentActiveId);
-    const nextIndex = (currentIndex + 1) % players.length;
-    const nextPlayer = players[nextIndex];
-    const nextTurnNum = (settings.currentTurn || 1) + 1;
+    const currentPlayers = playersRef.current;
+    const currentSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const currentDice = getLocalState<DiceState>('pt_dice', diceStateRef.current) || diceStateRef.current;
+    const currentDeviceId = devicePlayerIdRef.current;
 
-    setSettingsState(s => ({
-      ...s,
+    if (currentSettings.status !== 'active') return;
+    if (currentPlayers.length === 0) return;
+    // Do not allow turn switch while dice animation is running or before dice has been rolled
+    if (isRollingRef.current || currentDice.isRolling) return;
+    if (!currentDice.hasRolledThisTurn || !currentDice.lastRolledByPlayerId) return;
+
+    const currentOwnerId = currentDice.lastRolledByPlayerId || currentSettings.activePlayerId || currentPlayers[0]?.id;
+    // Prevent other player devices from skipping the active roller's claim phase
+    if (currentDeviceId !== 'all' && currentDeviceId !== currentOwnerId) return;
+
+    takeSnapshot();
+    const currentIndex = currentPlayers.findIndex(p => p.id === currentOwnerId);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % currentPlayers.length : 0;
+    const nextPlayer = currentPlayers[nextIndex];
+    const nextTurnNum = (currentSettings.currentTurn || 1) + 1;
+
+    const updatedSettings: GameSettings = {
+      ...currentSettings,
       activePlayerId: nextPlayer.id,
       currentTurn: nextTurnNum,
-    }));
+    };
 
     const updatedDiceState: DiceState = {
-      ...diceState,
+      ...currentDice,
+      currentValue: null,
+      lastRolledByPlayerId: null,
+      lastRolledAtRound: null,
+      lastRolledAtTurn: null,
       hasRolledThisTurn: false,
       isRolling: false,
+      rollingPlayerId: null,
+      turnPhase: 'waiting_roll',
     };
+
+    const turnLogEntry: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: currentSettings.currentRound,
+      type: 'game_control',
+      description: `Giliran #${nextTurnNum}: Sekarang giliran ${nextPlayer.name} (${nextPlayer.color.toUpperCase()}).`,
+    };
+    const updatedLogs = [turnLogEntry, ...logsRef.current];
+
+    settingsRef.current = updatedSettings;
+    diceStateRef.current = updatedDiceState;
+    logsRef.current = updatedLogs;
+    setSettingsState(updatedSettings);
     setDiceState(updatedDiceState);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', updatedSettings);
     saveLocalState('pt_dice', updatedDiceState);
+    saveLocalState('pt_logs', updatedLogs);
 
     broadcastGameEvent({
       type: 'TURN_CHANGED',
       payload: {
         activePlayerId: nextPlayer.id,
         currentTurn: nextTurnNum,
+        currentRound: currentSettings.currentRound,
+        diceState: updatedDiceState,
+        logs: updatedLogs,
       }
     });
 
-    addLog('game_control', `Giliran #${nextTurnNum}: Sekarang giliran ${nextPlayer.name} (${nextPlayer.color.toUpperCase()}).`);
     soundEffects.playClick();
   };
 
   const setActiveTurnPlayer = (playerId: string) => {
-    const target = players.find(p => p.id === playerId);
+    const currentPlayers = playersRef.current;
+    const currentSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const currentDice = getLocalState<DiceState>('pt_dice', diceStateRef.current) || diceStateRef.current;
+    const currentDeviceId = devicePlayerIdRef.current;
+
+    // Prevent switching turn mid-roll or while a rolled claim is pending
+    if (isRollingRef.current || currentDice.isRolling) return;
+    if (currentDice.hasRolledThisTurn && (currentDice.turnPhase ?? 'claim_pending') === 'claim_pending') return;
+
+    const currentActiveId = currentSettings.activePlayerId || currentPlayers[0]?.id;
+    if (currentDeviceId !== 'all' && currentDeviceId !== currentActiveId) return;
+
+    const target = currentPlayers.find(p => p.id === playerId);
     if (!target) return;
     takeSnapshot();
-    const turnNum = settings.currentTurn || 1;
+    const turnNum = currentSettings.currentTurn || 1;
 
-    setSettingsState(s => ({
-      ...s,
+    const updatedSettings: GameSettings = {
+      ...currentSettings,
       activePlayerId: target.id,
-    }));
+    };
 
     const updatedDiceState: DiceState = {
-      ...diceState,
+      ...currentDice,
+      currentValue: null,
+      lastRolledByPlayerId: null,
+      lastRolledAtRound: null,
+      lastRolledAtTurn: null,
       hasRolledThisTurn: false,
       isRolling: false,
+      rollingPlayerId: null,
+      turnPhase: 'waiting_roll',
     };
+
+    const turnLogEntry: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: currentSettings.currentRound,
+      type: 'game_control',
+      description: `Host mengatur giliran aktif ke ${target.name} (${target.color.toUpperCase()}).`,
+    };
+    const updatedLogs = [turnLogEntry, ...logsRef.current];
+
+    settingsRef.current = updatedSettings;
+    diceStateRef.current = updatedDiceState;
+    logsRef.current = updatedLogs;
+    setSettingsState(updatedSettings);
     setDiceState(updatedDiceState);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', updatedSettings);
     saveLocalState('pt_dice', updatedDiceState);
+    saveLocalState('pt_logs', updatedLogs);
 
     broadcastGameEvent({
       type: 'TURN_CHANGED',
       payload: {
         activePlayerId: target.id,
         currentTurn: turnNum,
+        currentRound: currentSettings.currentRound,
+        diceState: updatedDiceState,
+        logs: updatedLogs,
       }
     });
 
-    addLog('game_control', `Host mengatur giliran aktif ke ${target.name} (${target.color.toUpperCase()}).`);
     soundEffects.playClick();
   };
 
@@ -1795,6 +2298,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Turn & Dice
       activePlayer,
+      claimTurnPlayer,
+      isTurnLocked,
+      devicePlayerId,
+      setDevicePlayerId,
       diceState,
       rollDice,
       nextTurn,

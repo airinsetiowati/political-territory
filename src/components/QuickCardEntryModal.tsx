@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   QrCode, 
@@ -14,21 +14,44 @@ import { PolicyCard } from '../types/game';
 export const QuickCardEntryModal: React.FC = () => {
   const { 
     activeModal, 
+    activeModalData,
     closeModal, 
     verifyCardCode, 
     players, 
     territories, 
+    activePlayer,
+    claimTurnPlayer,
+    diceState,
+    devicePlayerId,
     claimTerritory, 
     openModal
   } = useGame();
 
+  const lockedRollerId = claimTurnPlayer?.id || null;
+  const defaultPlayerId = lockedRollerId || activeModalData?.playerId || activePlayer?.id || players[0]?.id || '';
+
   const [inputCode, setInputCode] = useState('');
-  const [selectedPlayerId, setSelectedPlayerId] = useState(players[0]?.id || '');
+  const [selectedPlayerId, setSelectedPlayerId] = useState(defaultPlayerId);
   const [selectedTerritoryId, setSelectedTerritoryId] = useState('');
   const [verificationResult, setVerificationResult] = useState<any>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
+  useEffect(() => {
+    if (activeModal === 'QUICK_CARD_ENTRY') {
+      setSelectedPlayerId(lockedRollerId || activeModalData?.playerId || activePlayer?.id || players[0]?.id || '');
+      setInputCode('');
+      setSelectedTerritoryId('');
+      setVerificationResult(null);
+      setStatusMessage(null);
+    }
+  }, [activeModal, activeModalData?.playerId, lockedRollerId, activePlayer?.id, players]);
+
   if (activeModal !== 'QUICK_CARD_ENTRY') return null;
+
+  const hasRolled = Boolean(diceState.hasRolledThisTurn && claimTurnPlayer);
+  const effectivePolicyPlayerId = claimTurnPlayer?.id || activePlayer?.id || selectedPlayerId;
+  const effectivePolicyPlayer = players.find(p => p.id === effectivePolicyPlayerId) || activePlayer;
+  const isPolicyDeviceAllowed = devicePlayerId === 'all' || devicePlayerId === effectivePolicyPlayerId;
 
   const handleVerify = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -60,8 +83,26 @@ export const QuickCardEntryModal: React.FC = () => {
   };
 
   const handleClaim = () => {
-    if (!selectedPlayerId || !selectedTerritoryId || !verificationResult?.card) return;
-    const res = claimTerritory(selectedPlayerId, selectedTerritoryId, verificationResult.card.code);
+    if (!effectivePolicyPlayerId || !selectedTerritoryId || !verificationResult?.card) return;
+    if (diceState.isRolling) {
+      setStatusMessage({ type: 'error', text: 'Animasi dadu sedang berlangsung. Tunggu hingga selesai.' });
+      return;
+    }
+    if (!hasRolled || !claimTurnPlayer) {
+      setStatusMessage({
+        type: 'error',
+        text: `${activePlayer?.name || 'Pemain aktif'} harus melakukan Roll Dice terlebih dahulu sebelum mengklaim wilayah.`
+      });
+      return;
+    }
+    if (!isPolicyDeviceAllowed) {
+      setStatusMessage({
+        type: 'error',
+        text: `Bukan giliran perangkat ini. Klaim hanya dapat dilakukan oleh ${effectivePolicyPlayer?.name}.`
+      });
+      return;
+    }
+    const res = claimTerritory(effectivePolicyPlayerId, selectedTerritoryId, verificationResult.card.code);
     if (res.success) {
       setStatusMessage({ type: 'success', text: res.message });
       setTimeout(() => {
@@ -201,31 +242,59 @@ export const QuickCardEntryModal: React.FC = () => {
                 {/* Player Selector */}
                 <div className="pt-3 border-t border-[#EAE9E3]">
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider text-[#253451]/70 mb-1.5">
-                    Pemain yang Melakukan Aksi:
+                    {verificationResult.type === 'policy'
+                      ? (lockedRollerId
+                        ? `Pelempar Dadu Aktif (Claim): ${claimTurnPlayer?.name}`
+                        : `Pemain Giliran Aktif: ${activePlayer?.name}`)
+                      : 'Pemain yang Melakukan Aksi:'}
                   </label>
+                  {verificationResult.type === 'policy' && lockedRollerId && (
+                    <div className="mb-2 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-[10px] font-bold text-amber-900">
+                      🎲 Kepemilikan wilayah otomatis diberikan ke {claimTurnPlayer?.name} (Dadu: {diceState.currentValue ?? '-'}).
+                    </div>
+                  )}
+                  {verificationResult.type === 'policy' && !hasRolled && (
+                    <div className="mb-2 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-[10px] font-bold text-amber-900">
+                      🎲 {activePlayer?.name} harus melempar dadu (Roll Dice) terlebih dahulu sebelum mengklaim wilayah.
+                    </div>
+                  )}
+                  {verificationResult.type === 'policy' && hasRolled && !isPolicyDeviceAllowed && (
+                    <div className="mb-2 px-2.5 py-1 rounded-xl bg-red-50 border border-red-200 text-[10px] font-bold text-red-700">
+                      Perangkat ini berperan sebagai pemain lain. Hanya {effectivePolicyPlayer?.name} atau Meja Bersama yang dapat melakukan klaim.
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {players.map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedPlayerId(p.id)}
-                        className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-between transition ${
-                          selectedPlayerId === p.id
-                            ? 'bg-[#253451] text-white border-[#253451] shadow-xs'
-                            : 'bg-white border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className={`w-2.5 h-2.5 rounded-full ${
-                            p.color === 'red' ? 'bg-[#EF4444]' :
-                            p.color === 'blue' ? 'bg-[#3B82F6]' :
-                            p.color === 'green' ? 'bg-[#10B981]' : 'bg-[#F59E0B]'
-                          }`} />
-                          <span className="truncate">{p.name}</span>
-                        </div>
-                        <span className="font-mono text-[10px]">{p.budget}GB</span>
-                      </button>
-                    ))}
+                    {players.map(p => {
+                      const isLockedOut = verificationResult.type === 'policy' && p.id !== effectivePolicyPlayerId;
+                      const isSelected = (verificationResult.type === 'policy' ? effectivePolicyPlayerId : selectedPlayerId) === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={isLockedOut}
+                          onClick={() => {
+                            if (!isLockedOut) setSelectedPlayerId(p.id);
+                          }}
+                          className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-between transition ${
+                            isSelected
+                              ? 'bg-[#253451] text-white border-[#253451] shadow-xs'
+                              : isLockedOut
+                                ? 'bg-white border-[#EAE9E3] text-[#253451]/35 opacity-45 cursor-not-allowed'
+                                : 'bg-white border-[#EAE9E3] text-[#253451] hover:bg-[#EAE9E3]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className={`w-2.5 h-2.5 rounded-full ${
+                              p.color === 'red' ? 'bg-[#EF4444]' :
+                              p.color === 'blue' ? 'bg-[#3B82F6]' :
+                              p.color === 'green' ? 'bg-[#10B981]' : 'bg-[#F59E0B]'
+                            }`} />
+                            <span className="truncate">{p.name}</span>
+                          </div>
+                          <span className="font-mono text-[10px]">{p.budget}GB</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -271,11 +340,17 @@ export const QuickCardEntryModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleClaim}
-                  disabled={verificationResult.isUsed && !verificationResult.card.isReusable}
+                  disabled={!hasRolled || (verificationResult.isUsed && !verificationResult.card.isReusable) || diceState.isRolling || !isPolicyDeviceAllowed || statusMessage?.type === 'success'}
                   className="w-full py-3.5 rounded-2xl bg-[#253451] hover:bg-[#1C273D] text-white font-extrabold text-xs uppercase tracking-wider shadow-soft-sm transition flex items-center justify-center gap-2 disabled:opacity-40 game-press"
                 >
                   <Flag className="w-4 h-4 text-[#F4CE70]" />
-                  <span>Klaim Wilayah Ini Sekarang</span>
+                  <span>
+                    {!hasRolled
+                      ? `Roll Dice Terlebih Dahulu (${activePlayer?.name})`
+                      : !isPolicyDeviceAllowed
+                        ? `Menunggu ${effectivePolicyPlayer?.name}`
+                        : `Klaim Wilayah Ini (${effectivePolicyPlayer?.name})`}
+                  </span>
                 </button>
               </div>
             )}

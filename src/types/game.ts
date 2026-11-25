@@ -188,12 +188,17 @@ export interface DiceRollLog {
   timestamp: string;
 }
 
+export type TurnPhase = 'waiting_roll' | 'rolling' | 'claim_pending' | 'claim_completed';
+
 export interface DiceState {
   currentValue: number | null; // Last roll value (1-6)
   isRolling: boolean;
+  rollingPlayerId?: string | null; // Player ID currently rolling during animation
   lastRolledByPlayerId: string | null;
   lastRolledAtRound: number | null;
+  lastRolledAtTurn?: number | null;
   hasRolledThisTurn: boolean;
+  turnPhase?: TurnPhase;
   history: DiceRollLog[];
 }
 
