@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { PolicyCard } from '../types/game';
+import { getCardAsset, EVENT_CARD_BACK, POLICY_CARD_BACK } from '../utils/cardAssets';
 
 export const QuickCardEntryModal: React.FC = () => {
   const { 
@@ -42,12 +43,39 @@ export const QuickCardEntryModal: React.FC = () => {
   useEffect(() => {
     if (activeModal === 'QUICK_CARD_ENTRY') {
       setSelectedPlayerId(activeModalData?.playerId || rollerId || activePlayer?.id || players[0]?.id || '');
-      setInputCode('');
-      setSelectedTerritoryId('');
-      setVerificationResult(null);
+      const initialCode = typeof activeModalData?.cardCode === 'string' ? activeModalData.cardCode : '';
+      setInputCode(initialCode);
       setStatusMessage(null);
+
+      if (initialCode.trim()) {
+        const res = verifyCardCode(initialCode);
+        if (res.type === 'not_found') {
+          setVerificationResult(null);
+          setSelectedTerritoryId('');
+          setStatusMessage({
+            type: 'error',
+            text: `Kode kartu "${initialCode.trim().toUpperCase()}" tidak ditemukan. Periksa ejaan atau periksa daftar kartu.`
+          });
+        } else {
+          setVerificationResult(res);
+          if (res.type === 'policy') {
+            const pol = res.card as PolicyCard;
+            if (pol.targetTerritoryId) {
+              setSelectedTerritoryId(pol.targetTerritoryId);
+            } else {
+              const unclaimed = territories.find(t => t.ownerId === null);
+              setSelectedTerritoryId(unclaimed ? unclaimed.id : '');
+            }
+          } else {
+            setSelectedTerritoryId('');
+          }
+        }
+      } else {
+        setSelectedTerritoryId('');
+        setVerificationResult(null);
+      }
     }
-  }, [activeModal, activeModalData?.playerId, activeModalData?.rollerId, rollerId, activePlayer?.id]);
+  }, [activeModal, activeModalData?.playerId, activeModalData?.rollerId, activeModalData?.cardCode, rollerId, activePlayer?.id]);
 
   if (activeModal !== 'QUICK_CARD_ENTRY') return null;
 
@@ -204,11 +232,15 @@ export const QuickCardEntryModal: React.FC = () => {
               {/* Card Image Display */}
               <div className="w-full sm:w-44 h-56 bg-white rounded-2xl overflow-hidden border border-[#EAE9E3] flex items-center justify-center shrink-0 shadow-xs p-2">
                 <img
-                  src={verificationResult.card.image}
+                  src={getCardAsset(
+                    verificationResult.card.image,
+                    verificationResult.type === 'policy' ? POLICY_CARD_BACK : EVENT_CARD_BACK
+                  )}
                   alt={verificationResult.card.title || verificationResult.card.name}
                   className="w-full h-full object-contain rounded-xl"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/game-assets/event-back';
+                    (e.target as HTMLImageElement).src =
+                      verificationResult.type === 'policy' ? POLICY_CARD_BACK : EVENT_CARD_BACK;
                   }}
                 />
               </div>

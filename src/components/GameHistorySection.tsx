@@ -140,8 +140,8 @@ export const GameHistorySection: React.FC = () => {
       )}
 
       {/* Filter and Search Controls */}
-      <div className="space-y-1.5">
-        <div className="relative">
+      <div className="flex flex-col md:flex-row md:items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
           <input
             type="text"
             value={searchQuery}
@@ -152,11 +152,11 @@ export const GameHistorySection: React.FC = () => {
           <Search className="w-3.5 h-3.5 text-[#253451]/40 absolute left-2.5 top-2" />
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <select
             value={filterType}
             onChange={e => setFilterType(e.target.value)}
-            className="flex-1 min-w-0 bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2 py-1.5 text-[10px] font-bold text-[#253451] outline-none cursor-pointer"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[10px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             <option value="all">Semua Tipe Aksi</option>
             <option value="dice">🎲 Lemparan Dadu</option>
@@ -171,85 +171,87 @@ export const GameHistorySection: React.FC = () => {
           <select
             value={filterPlayer}
             onChange={e => setFilterPlayer(e.target.value)}
-            className="flex-1 min-w-0 bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2 py-1.5 text-[10px] font-bold text-[#253451] outline-none cursor-pointer"
+            className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-2.5 py-1.5 text-[10px] font-bold text-[#253451] outline-none cursor-pointer"
           >
             <option value="all">Semua Pemain</option>
             {players.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-        </div>
 
-        <div className="flex items-center justify-between text-[10px] font-mono font-bold text-[#253451]/50">
-          <span>{filteredLogs.length} dari {logs.length} aktivitas</span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#73B77A]" />
-            <span>Terbaru di atas</span>
-          </span>
+          <div className="flex items-center gap-2 text-[10px] font-mono font-bold text-[#253451]/55 px-1">
+            <span>{filteredLogs.length}/{logs.length}</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#73B77A]" />
+              <span className="hidden sm:inline">Terbaru</span>
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Log Feed List (Bounded height to align cleanly with EventCardCenter) */}
-      <div className="flex-1 min-h-[240px] max-h-[380px] lg:max-h-[400px] overflow-y-auto space-y-1.5 pr-1">
+      {/* Log Feed List */}
+      <div className="min-h-[140px] max-h-[300px] overflow-y-auto pr-1">
         {filteredLogs.length === 0 ? (
-          <div className="h-full min-h-[160px] flex flex-col items-center justify-center text-center px-4 py-8 text-xs text-[#253451]/50 font-medium bg-[#F8F5EC] rounded-2xl border border-dashed border-[#EAE9E3]">
+          <div className="min-h-[140px] flex flex-col items-center justify-center text-center px-4 py-6 text-xs text-[#253451]/50 font-medium bg-[#F8F5EC] rounded-2xl border border-dashed border-[#EAE9E3]">
             <History className="w-6 h-6 text-[#253451]/20 mb-2" />
             <span>Belum ada aktivitas yang cocok dengan filter.</span>
           </div>
         ) : (
-          filteredLogs.map(l => (
-            <div
-              key={l.id}
-              className="p-2 bg-[#F8F5EC] rounded-xl border border-[#EAE9E3] hover:border-[#253451]/20 transition flex items-start gap-2"
-            >
-              <div className="w-6 h-6 rounded-lg bg-white border border-[#EAE9E3] flex items-center justify-center shrink-0 mt-0.5">
-                {getLogIcon(l.type)}
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+            {filteredLogs.map(l => (
+              <div
+                key={l.id}
+                className="p-2 bg-[#F8F5EC] rounded-xl border border-[#EAE9E3] hover:border-[#253451]/20 transition flex items-start gap-2"
+              >
+                <div className="w-6 h-6 rounded-lg bg-white border border-[#EAE9E3] flex items-center justify-center shrink-0 mt-0.5">
+                  {getLogIcon(l.type)}
+                </div>
 
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9px] font-mono text-[#253451]/45">{l.timestamp}</span>
-                  <span className="text-[9px] font-mono font-bold text-[#253451]/70 bg-white border border-[#EAE9E3] px-1 rounded">
-                    R#{l.round}
-                  </span>
-                  {l.playerName && (
-                    <span className="text-[9px] font-black text-[#253451]">
-                      {l.playerName}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-mono text-[#253451]/45">{l.timestamp}</span>
+                    <span className="text-[9px] font-mono font-bold text-[#253451]/70 bg-white border border-[#EAE9E3] px-1 rounded">
+                      R#{l.round}
                     </span>
-                  )}
-                  {l.cardCode && (
-                    <span className="text-[9px] font-mono font-extrabold text-[#EF956F]">
-                      {l.cardCode}
-                    </span>
-                  )}
-                  {l.diceValue !== undefined && (
-                    <span className="text-[9px] font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded inline-flex items-center gap-0.5">
-                      <Dices className="w-2.5 h-2.5" />
-                      <span>{l.diceValue}</span>
-                    </span>
-                  )}
+                    {l.playerName && (
+                      <span className="text-[9px] font-black text-[#253451]">
+                        {l.playerName}
+                      </span>
+                    )}
+                    {l.cardCode && (
+                      <span className="text-[9px] font-mono font-extrabold text-[#EF956F]">
+                        {l.cardCode}
+                      </span>
+                    )}
+                    {l.diceValue !== undefined && (
+                      <span className="text-[9px] font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded inline-flex items-center gap-0.5">
+                        <Dices className="w-2.5 h-2.5" />
+                        <span>{l.diceValue}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[#253451] font-medium text-[11px] leading-snug mt-0.5 break-words">
+                    {l.description}
+                  </div>
                 </div>
-                <div className="text-[#253451] font-medium text-[11px] leading-snug mt-0.5 break-words">
-                  {l.description}
-                </div>
-              </div>
 
-              {(l.gbChange !== undefined && l.gbChange !== 0) || (l.pointChange !== undefined && l.pointChange !== 0) ? (
-                <div className="flex flex-col items-end gap-0.5 font-mono text-[10px] font-extrabold shrink-0">
-                  {l.gbChange !== undefined && l.gbChange !== 0 && (
-                    <span className={l.gbChange > 0 ? 'text-[#2e6d34]' : 'text-[#EF4444]'}>
-                      {l.gbChange > 0 ? `+${l.gbChange}` : l.gbChange} GB
-                    </span>
-                  )}
-                  {l.pointChange !== undefined && l.pointChange !== 0 && (
-                    <span className={l.pointChange > 0 ? 'text-[#3B82F6]' : 'text-[#EF4444]'}>
-                      {l.pointChange > 0 ? `+${l.pointChange}` : l.pointChange} VP
-                    </span>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ))
+                {(l.gbChange !== undefined && l.gbChange !== 0) || (l.pointChange !== undefined && l.pointChange !== 0) ? (
+                  <div className="flex flex-col items-end gap-0.5 font-mono text-[10px] font-extrabold shrink-0">
+                    {l.gbChange !== undefined && l.gbChange !== 0 && (
+                      <span className={l.gbChange > 0 ? 'text-[#2e6d34]' : 'text-[#EF4444]'}>
+                        {l.gbChange > 0 ? `+${l.gbChange}` : l.gbChange} GB
+                      </span>
+                    )}
+                    {l.pointChange !== undefined && l.pointChange !== 0 && (
+                      <span className={l.pointChange > 0 ? 'text-[#3B82F6]' : 'text-[#EF4444]'}>
+                        {l.pointChange > 0 ? `+${l.pointChange}` : l.pointChange} VP
+                      </span>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </section>

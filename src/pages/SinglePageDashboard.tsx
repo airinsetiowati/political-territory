@@ -9,12 +9,7 @@ import {
   Layers,
   History,
   QrCode,
-  Clock,
-  ShieldAlert,
-  Sparkles,
-  Target,
-  Flag,
-  ClipboardList
+  Clock
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { DiceSection } from '../components/DiceSection';
@@ -30,11 +25,6 @@ export const SinglePageDashboard: React.FC = () => {
   const {
     settings,
     players,
-    territories,
-    policyCards,
-    crisisCards,
-    opportunityCards,
-    missionCards,
     activePlayer,
     isTurnLocked,
     devicePlayerId,
@@ -43,7 +33,7 @@ export const SinglePageDashboard: React.FC = () => {
     resetGame
   } = useGame();
 
-  const [eventTab, setEventTab] = useState<EventTab>('all');
+  const [eventTab, setEventTab] = useState<EventTab>('policy');
 
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
@@ -52,17 +42,12 @@ export const SinglePageDashboard: React.FC = () => {
     }
   };
 
-  const jumpToEventTab = (tab: EventTab) => {
-    setEventTab(tab);
-    scrollToSection('event-card-center');
-  };
-
   const navItems = [
     { id: 'map-section', label: 'Peta', icon: Map },
     { id: 'dice-section', label: 'Dadu', icon: Dices },
     { id: 'timer-players-section', label: 'Pemain', icon: Users },
     { id: 'timer-section', label: 'Ekonomi', icon: Clock },
-    { id: 'event-card-center', label: 'Event', icon: Layers },
+    { id: 'event-card-center', label: 'Kartu', icon: Layers },
     { id: 'history-section', label: 'Riwayat', icon: History },
   ];
 
@@ -89,21 +74,6 @@ export const SinglePageDashboard: React.FC = () => {
   const gameTimerRunning = settings.status === 'active' && Boolean(settings.gameTimerRunning);
   const gameTimerExpired = Boolean(settings.gameTimerExpired) || gameRemainingSeconds <= 0;
   const gameTimerUrgent = gameTimerRunning && gameRemainingSeconds <= 300;
-
-  const claimedCount = territories.filter(t => t.ownerId !== null).length;
-  const remainingPolicies = policyCards.filter(c => !c.isUsed).length;
-  const openCrises = crisisCards.filter(c => !c.isUsed).length;
-  const openOpportunities = opportunityCards.filter(c => !c.isUsed || c.isReusable).length;
-  const openMissions = missionCards.filter(c => c.status !== 'completed').length;
-
-  const activeMissions = players.flatMap(player =>
-    (player.activeMissions || [])
-      .filter(mission => mission.status === 'active')
-      .map(mission => ({ player, mission }))
-  );
-  const activeOpportunities = players.flatMap(player =>
-    (player.activeOpportunities || []).map(opp => ({ player, opp }))
-  );
 
   return (
     <div className="min-h-screen bg-[#F0ECE1] text-[#253451] flex flex-col font-sans select-none animate-in fade-in duration-300 overflow-x-hidden">
@@ -264,127 +234,15 @@ export const SinglePageDashboard: React.FC = () => {
       <main className="flex-1 w-full max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-6 py-3.5 sm:py-4 space-y-4">
 
         {/* =========================================================================
-            B. ROW UTAMA: PEMAIN, EKONOMI & AKSES CEPAT (KIRI 5) | MAP & DADU (KANAN 7)
+            B. ROW UTAMA: PEMAIN, EKONOMI & EVENT CARD CENTER (KIRI 5) | MAP & DADU (KANAN 7)
            ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
 
-          {/* SISI KIRI: PEMAIN, EKONOMI & HUB AKSI CEPAT */}
+          {/* SISI KIRI: PEMAIN, EKONOMI & EVENT CARD CENTER */}
           <div className="lg:col-span-5 w-full flex flex-col gap-3.5 min-w-0">
             <PlayerOverviewSection />
             <EconomicTimerSection />
-
-            {/* Hub Akses Cepat & Event Aktif (menutup ruang kosong & memudahkan akses fitur) */}
-            <section className="flex-1 bg-white rounded-3xl border border-[#EAE9E3] shadow-soft-sm p-3.5 sm:p-4 flex flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#EAE9E3]">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-xl bg-[#253451] text-[#F4CE70] flex items-center justify-center shrink-0">
-                    <ClipboardList className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-display font-black text-xs sm:text-sm text-[#253451] uppercase tracking-wide truncate">
-                      Akses Cepat &amp; Quest Aktif
-                    </h3>
-                    <span className="text-[10px] text-[#253451]/60 font-bold block truncate">
-                      Klaim Wilayah, Krisis, Peluang &amp; Misi dalam 1 klik
-                    </span>
-                  </div>
-                </div>
-                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-[#F8F5EC] border border-[#EAE9E3] text-[#253451] shrink-0">
-                  {claimedCount}/40 Area • {remainingPolicies} Policy
-                </span>
-              </div>
-
-              {/* 4 Main Feature Shortcuts */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => openModal('QUICK_CARD_ENTRY')}
-                  className="px-2.5 py-2 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-[#F4CE70] text-[11px] font-extrabold transition shadow-2xs flex items-center justify-center gap-1.5"
-                >
-                  <Flag className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Claim / Kartu</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => jumpToEventTab('crisis')}
-                  className="px-2.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[11px] font-extrabold transition flex items-center justify-center gap-1.5"
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Krisis ({openCrises})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => jumpToEventTab('opportunity')}
-                  className="px-2.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-extrabold transition flex items-center justify-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Peluang ({openOpportunities})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => jumpToEventTab('mission')}
-                  className="px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-extrabold transition flex items-center justify-center gap-1.5"
-                >
-                  <Target className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Misi ({openMissions})</span>
-                </button>
-              </div>
-
-              {/* Active Quests / Ongoing Stimulus Feed */}
-              <div className="flex-1 flex flex-col justify-center bg-[#F8F5EC] rounded-2xl border border-[#EAE9E3] p-2.5">
-                {activeMissions.length === 0 && activeOpportunities.length === 0 ? (
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-[#253451]/65 font-medium px-1">
-                    <span>Belum ada Misi atau Stimulus aktif. Klik area di peta untuk klaim wilayah.</span>
-                    <button
-                      type="button"
-                      onClick={() => jumpToEventTab('all')}
-                      className="text-[10px] font-extrabold text-[#253451] hover:underline shrink-0"
-                    >
-                      Buka Kartu →
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[110px] overflow-y-auto pr-0.5">
-                    {activeMissions.map(({ player, mission }) => (
-                      <button
-                        key={`qa-mis-${player.id}-${mission.id}`}
-                        type="button"
-                        onClick={() => openModal('MISSION_DETAIL', { card: mission, playerId: player.id })}
-                        className="text-left bg-white hover:bg-emerald-50/70 border border-emerald-200 rounded-xl px-2.5 py-1.5 transition flex items-center justify-between gap-2"
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-4 h-4 rounded-full overflow-hidden shrink-0">
-                            <PlayerLogo player={player} size="full" showBadge={false} />
-                          </div>
-                          <span className="font-mono text-[9px] font-black text-emerald-700 shrink-0">{mission.code}</span>
-                          <span className="text-[11px] font-bold text-[#253451] truncate">{mission.title}</span>
-                        </div>
-                        <span className="font-mono text-[10px] font-black text-emerald-700 shrink-0">+{mission.rewardPoints} VP</span>
-                      </button>
-                    ))}
-                    {activeOpportunities.map(({ player, opp }) => (
-                      <button
-                        key={`qa-opp-${player.id}-${opp.id}`}
-                        type="button"
-                        onClick={() => openModal('OPPORTUNITY_DETAIL', { card: opp, playerId: player.id })}
-                        className="text-left bg-white hover:bg-amber-50/70 border border-amber-200 rounded-xl px-2.5 py-1.5 transition flex items-center justify-between gap-2"
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-4 h-4 rounded-full overflow-hidden shrink-0">
-                            <PlayerLogo player={player} size="full" showBadge={false} />
-                          </div>
-                          <span className="font-mono text-[9px] font-black text-amber-700 shrink-0">{opp.code}</span>
-                          <span className="text-[11px] font-bold text-[#253451] truncate">{opp.title}</span>
-                        </div>
-                        <span className="font-mono text-[10px] font-black text-amber-800 shrink-0">
-                          {opp.recurringGB > 0 ? `+${opp.recurringGB} GB` : opp.isPermanent ? 'Perm' : `${opp.remainingCycles}cy`}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
+            <EventCardCenter activeTab={eventTab} onTabChange={setEventTab} />
           </div>
 
           {/* SISI KANAN / UTAMA: MAP WILAYAH & SISTEM DADU */}
@@ -395,16 +253,10 @@ export const SinglePageDashboard: React.FC = () => {
         </div>
 
         {/* =========================================================================
-            C. ROW PENDUKUNG: EVENT CARD CENTER (8) & RIWAYAT PERMAINAN (4)
+            C. ROW PENDUKUNG: RIWAYAT PERMAINAN
            ========================================================================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          <div className="lg:col-span-8 w-full min-w-0">
-            <EventCardCenter activeTab={eventTab} onTabChange={setEventTab} />
-          </div>
-
-          <div className="lg:col-span-4 w-full min-w-0">
-            <GameHistorySection />
-          </div>
+        <div className="w-full">
+          <GameHistorySection />
         </div>
       </main>
 
