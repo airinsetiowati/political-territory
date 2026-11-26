@@ -14,7 +14,7 @@ import { useGame } from '../context/GameContext';
 import { Territory, TerritoryCategory } from '../types/game';
 import { ORIGINAL_BOARD_MAP, CATEGORY_NAMES } from '../utils/categoryAssets';
 import { CategoryLogo } from '../components/CategoryLogo';
-import { PlayerLogo } from '../components/PlayerLogo';
+import { PlayerLogo, PLAYER_COLOR_THEMES } from '../components/PlayerLogo';
 
 export const TerritoryMapPage: React.FC = () => {
   const { 
@@ -32,6 +32,8 @@ export const TerritoryMapPage: React.FC = () => {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
+  // Exact aspect ratio of the rendered map image (map/web.jpeg is 1215 x 1024)
+  const [boardAspect, setBoardAspect] = useState('1215 / 1024');
 
   // Map Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -274,12 +276,12 @@ export const TerritoryMapPage: React.FC = () => {
             transformOrigin: 'center center',
           }}
         >
-          {/* Strictly proportional Board Container locking aspect-ratio: 1209 / 1024 */}
-          <div 
+          {/* Strictly proportional Board Container matching the rendered map image */}
+          <div
             className="relative select-none shadow-[0_20px_50px_rgba(37,52,81,0.22)] rounded-2xl overflow-visible border-4 border-white/95 bg-[#c8e6a2]"
             style={{
-              width: 'min(92vw, calc((100vh - 7.5rem) * (1209 / 1024)))',
-              aspectRatio: '1209 / 1024',
+              width: `min(92vw, calc((100vh - 7.5rem) * (${boardAspect})))`,
+              aspectRatio: boardAspect,
             }}
           >
             {/* Custom Physical Board Map Image (Original Background Truth preserved 100%) */}
@@ -287,8 +289,14 @@ export const TerritoryMapPage: React.FC = () => {
               ref={mapImageRef}
               src={mapSrc}
               alt="Political Territory Original Board Game Map"
-              className="w-full h-full block object-contain rounded-xl select-none pointer-events-none"
+              className="w-full h-full block rounded-xl select-none pointer-events-none"
               draggable={false}
+              onLoad={(e) => {
+                const { naturalWidth, naturalHeight } = e.currentTarget;
+                if (naturalWidth > 0 && naturalHeight > 0) {
+                  setBoardAspect(`${naturalWidth} / ${naturalHeight}`);
+                }
+              }}
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.endsWith('/game-assets/map')) {
@@ -329,23 +337,39 @@ export const TerritoryMapPage: React.FC = () => {
                   }}
                   title={`${t.name} • ${CATEGORY_NAMES[t.category]}${owner ? ` [${owner.name}]` : ' [Belum Dikuasai]'}`}
                 >
-                  {/* Visual Marker Container */}
+                  {/* Visual Marker Container: centered on claim point without covering map logo */}
                   <div className={`w-full h-full transition-transform duration-150 ${
                     isEditing ? 'scale-125' : isHovered ? 'scale-110' : ''
                   }`}>
                     {owner ? (
-                      /* CLAIMED STATE: Player Logo completely covers the original spot on the map */
-                      <div className={`w-full h-full relative flex items-center justify-center rounded-full animate-in zoom-in-75 duration-200 ${
-                        isEditMode ? 'cursor-move ring-3 ring-[#F4CE70]' : ''
-                      }`}>
-                        <PlayerLogo player={owner} size="full" />
-                      </div>
+                      (() => {
+                        const ownerTheme = PLAYER_COLOR_THEMES[owner.color] || PLAYER_COLOR_THEMES.red;
+                        return (
+                          <div
+                            className={`w-full h-full relative rounded-full border-[2.5px] transition-all duration-150 ${
+                              isEditMode ? 'cursor-move' : ''
+                            }`}
+                            style={{
+                              borderColor: ownerTheme.primary,
+                              backgroundColor: 'transparent',
+                              boxShadow: `0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px ${ownerTheme.primary}33, 0 2px 8px rgba(0,0,0,0.28)${isEditMode ? ', 0 0 0 6px rgba(244,206,112,0.55)' : ''}`,
+                            }}
+                          >
+                            <div
+                              className="absolute -top-[20%] -right-[20%] w-[54%] h-[54%] rounded-full shadow-md pointer-events-none ring-2 ring-white"
+                              style={{ backgroundColor: ownerTheme.primary }}
+                            >
+                              <PlayerLogo player={owner} size="full" showBadge={false} />
+                            </div>
+                          </div>
+                        );
+                      })()
                     ) : (
                       /* UNCLAIMED STATE: Original spot on map image is visible */
                       <div className={`w-full h-full rounded-full transition-all duration-150 flex items-center justify-center ${
-                        isEditMode 
-                          ? 'cursor-move ring-2 ring-[#F4CE70] bg-[#F4CE70]/25' 
-                          : 'hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/20 active:scale-95'
+                        isEditMode
+                          ? 'cursor-move ring-2 ring-[#F4CE70] bg-[#F4CE70]/20'
+                          : 'hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/15 active:scale-95'
                       }`} />
                     )}
                   </div>

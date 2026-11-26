@@ -10,7 +10,7 @@ import { useGame } from '../context/GameContext';
 import { Territory } from '../types/game';
 import { ORIGINAL_BOARD_MAP, CATEGORY_NAMES } from '../utils/categoryAssets';
 import { CategoryLogo } from './CategoryLogo';
-import { PlayerLogo } from './PlayerLogo';
+import { PlayerLogo, PLAYER_COLOR_THEMES } from './PlayerLogo';
 
 export const MapBoardSection: React.FC = () => {
   const {
@@ -25,6 +25,8 @@ export const MapBoardSection: React.FC = () => {
 
   // Zoom state (map position is locked at center; pan/drag is disabled)
   const [zoom, setZoom] = useState(1);
+  // Exact aspect ratio of the rendered map image (map/web.jpeg is 1215 x 1024)
+  const [boardAspect, setBoardAspect] = useState('1215 / 1024');
 
   // Map Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -198,7 +200,8 @@ export const MapBoardSection: React.FC = () => {
       <div
         ref={containerRef}
         onDragStart={(e) => e.preventDefault()}
-        className="w-full aspect-[1209/1024] max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-default p-1.5 select-none touch-pan-y"
+        className="w-full max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-default p-1.5 select-none touch-pan-y"
+        style={{ aspectRatio: boardAspect }}
       >
         <div
           className="w-full h-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
@@ -207,19 +210,25 @@ export const MapBoardSection: React.FC = () => {
             transformOrigin: 'center center',
           }}
         >
-          {/* Proportional Board Container */}
+          {/* Proportional Board Container: exact 1:1 coordinate frame matching the map image */}
           <div
-            className="relative h-full max-w-full select-none shadow-[0_14px_34px_rgba(37,52,81,0.2)] rounded-xl overflow-visible border-[3px] border-white/95 bg-[#c8e6a2]"
+            className="relative h-full max-w-full select-none shadow-[0_14px_34px_rgba(37,52,81,0.2)] rounded-xl overflow-visible ring-[3px] ring-white/95 bg-[#c8e6a2]"
             style={{
-              aspectRatio: '1209 / 1024',
+              aspectRatio: boardAspect,
             }}
           >
             {/* Custom Physical Board Map Image */}
             <img
               src={mapSrc}
               alt="Political Territory Original Board Game Map"
-              className="w-full h-full block object-contain rounded-lg select-none pointer-events-none"
+              className="w-full h-full block rounded-xl select-none pointer-events-none"
               draggable={false}
+              onLoad={(e) => {
+                const { naturalWidth, naturalHeight } = e.currentTarget;
+                if (naturalWidth > 0 && naturalHeight > 0) {
+                  setBoardAspect(`${naturalWidth} / ${naturalHeight}`);
+                }
+              }}
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.endsWith('/game-assets/map')) {
@@ -231,6 +240,7 @@ export const MapBoardSection: React.FC = () => {
             {/* Interactive Territory Markers Overlay */}
             {filteredTerritories.map((t: Territory) => {
               const owner = t.ownerId ? players.find(p => p.id === t.ownerId) : null;
+              const ownerTheme = owner ? (PLAYER_COLOR_THEMES[owner.color] || PLAYER_COLOR_THEMES.red) : null;
               const isHovered = hoveredTerritoryId === t.id;
 
               return (
@@ -252,18 +262,30 @@ export const MapBoardSection: React.FC = () => {
                   style={{
                     left: `${t.x * 100}%`,
                     top: `${t.y * 100}%`,
-                    width: '4.85%',
+                    width: '5.1%',
                   }}
                   title={`${t.name} • ${CATEGORY_NAMES[t.category]}${owner ? ` [${owner.name}]` : ' [Belum Dikuasai]'}`}
                 >
-                  {/* Visual Marker Container */}
+                  {/* Visual Marker Container: centered on territory point without blocking category icon */}
                   <div className={`w-full h-full transition-transform duration-150 ${isHovered ? 'scale-110' : ''}`}>
-                    {owner ? (
-                      <div className="w-full h-full relative flex items-center justify-center rounded-full animate-in zoom-in-75 duration-200">
-                        <PlayerLogo player={owner} size="full" />
+                    {owner && ownerTheme ? (
+                      <div
+                        className="w-full h-full relative rounded-full border-[2.5px] transition-all duration-150"
+                        style={{
+                          borderColor: ownerTheme.primary,
+                          backgroundColor: 'transparent',
+                          boxShadow: `0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px ${ownerTheme.primary}33, 0 2px 8px rgba(0,0,0,0.28)`,
+                        }}
+                      >
+                        <div
+                          className="absolute -top-[20%] -right-[20%] w-[54%] h-[54%] rounded-full shadow-md pointer-events-none ring-2 ring-white"
+                          style={{ backgroundColor: ownerTheme.primary }}
+                        >
+                          <PlayerLogo player={owner} size="full" showBadge={false} />
+                        </div>
                       </div>
                     ) : (
-                      <div className="w-full h-full rounded-full transition-all duration-150 hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/20 active:scale-95 flex items-center justify-center" />
+                      <div className="w-full h-full rounded-full transition-all duration-150 hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/15 active:scale-95" />
                     )}
                   </div>
 
