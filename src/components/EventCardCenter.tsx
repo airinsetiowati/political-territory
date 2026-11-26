@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Flag,
   ShieldAlert,
@@ -7,7 +7,9 @@ import {
   Search,
   Layers,
   QrCode,
-  ClipboardList
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { getCardAsset, EVENT_CARD_BACK, POLICY_CARD_BACK } from '../utils/cardAssets';
@@ -59,6 +61,11 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [policySectorFilter, setPolicySectorFilter] = useState<string>('all');
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  useEffect(() => {
+    setCarouselIndex(0);
+  }, [activeTab, searchQuery, statusFilter, policySectorFilter]);
 
   // Available card counts strictly derived from live GameContext state
   const availableCounts = useMemo(() => ({
@@ -218,7 +225,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
 
   const activeTabMeta = tabs.find(t => t.id === activeTab)!;
 
-  const renderPolicyCard = (c: PolicyCard) => {
+  const renderPolicyCard = (c: PolicyCard, idx: number, isSelected: boolean) => {
     const isUsed = c.isUsed && !c.isReusable;
     const statusLabel: CardStatusLabel = isUsed ? 'Used' : 'Active';
     const matchedTerritory = c.targetTerritoryId
@@ -245,17 +252,13 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     return (
       <div
         key={c.id}
-        onClick={() =>
-          openModal('QUICK_CARD_ENTRY', {
-            playerId: claimTurnPlayer?.id || activePlayer?.id,
-            rollerId: claimTurnPlayer?.id || undefined,
-            cardCode: c.code,
-          })
-        }
+        onClick={() => setCarouselIndex(idx)}
         className={`p-2.5 rounded-2xl border transition cursor-pointer flex items-center gap-2.5 ${
-          isUsed
-            ? 'bg-slate-50/80 border-slate-200 opacity-70'
-            : 'bg-white border-[#EAE9E3] hover:border-[#253451]/40 hover:bg-[#F8F5EC]/50 shadow-2xs'
+          isSelected
+            ? 'bg-[#F8F5EC] border-[#253451]/60 ring-2 ring-[#253451]/15 shadow-xs'
+            : isUsed
+              ? 'bg-slate-50/80 border-slate-200 opacity-75 hover:opacity-100'
+              : 'bg-white border-[#EAE9E3] hover:border-[#253451]/40 hover:bg-[#F8F5EC]/50 shadow-2xs'
         }`}
       >
         <div className="w-11 h-16 bg-[#F8F5EC] rounded-xl overflow-hidden border border-[#EAE9E3] shrink-0 p-0.5 flex items-center justify-center">
@@ -307,6 +310,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            setCarouselIndex(idx);
             openModal('QUICK_CARD_ENTRY', {
               playerId: claimTurnPlayer?.id || activePlayer?.id,
               rollerId: claimTurnPlayer?.id || undefined,
@@ -325,7 +329,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     );
   };
 
-  const renderCrisisCard = (c: CrisisCard) => {
+  const renderCrisisCard = (c: CrisisCard, idx: number, isSelected: boolean) => {
     const isResolved = c.isUsed && !c.isReusable;
     const statusLabel: CardStatusLabel = isResolved ? 'Used' : 'Active';
     const resolvedBy = c.usedByPlayerId ? players.find(p => p.id === c.usedByPlayerId) : undefined;
@@ -333,11 +337,13 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     return (
       <div
         key={c.id}
-        onClick={() => openModal('CRISIS_DETAIL', { card: c, playerId: activePlayer?.id })}
+        onClick={() => setCarouselIndex(idx)}
         className={`p-2.5 rounded-2xl border transition cursor-pointer flex items-center gap-2.5 ${
-          isResolved
-            ? 'bg-slate-50/80 border-slate-200 opacity-70'
-            : 'bg-white border-[#EAE9E3] hover:border-red-300 hover:bg-red-50/35 shadow-2xs'
+          isSelected
+            ? 'bg-red-50/70 border-red-400 ring-2 ring-red-200 shadow-xs'
+            : isResolved
+              ? 'bg-slate-50/80 border-slate-200 opacity-75 hover:opacity-100'
+              : 'bg-white border-[#EAE9E3] hover:border-red-300 hover:bg-red-50/35 shadow-2xs'
         }`}
       >
         <div className="w-11 h-16 bg-[#F8F5EC] rounded-xl overflow-hidden border border-[#EAE9E3] shrink-0 p-0.5 flex items-center justify-center">
@@ -379,6 +385,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            setCarouselIndex(idx);
             openModal('CRISIS_DETAIL', { card: c, playerId: activePlayer?.id });
           }}
           className={`px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition shrink-0 ${
@@ -393,7 +400,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     );
   };
 
-  const renderOpportunityCard = (c: OpportunityCard) => {
+  const renderOpportunityCard = (c: OpportunityCard, idx: number, isSelected: boolean) => {
     const runningOwner = players.find(p =>
       (p.activeOpportunities || []).some(o => o.id === c.id)
     );
@@ -411,11 +418,13 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     return (
       <div
         key={c.id}
-        onClick={() => openModal('OPPORTUNITY_DETAIL', { card: c, playerId: assignedPlayer?.id || activePlayer?.id })}
+        onClick={() => setCarouselIndex(idx)}
         className={`p-2.5 rounded-2xl border transition cursor-pointer flex items-center gap-2.5 ${
-          isUsed
-            ? 'bg-slate-50/80 border-slate-200 opacity-70'
-            : 'bg-white border-[#EAE9E3] hover:border-amber-300 hover:bg-amber-50/35 shadow-2xs'
+          isSelected
+            ? 'bg-amber-50/75 border-amber-400 ring-2 ring-amber-200 shadow-xs'
+            : isUsed
+              ? 'bg-slate-50/80 border-slate-200 opacity-75 hover:opacity-100'
+              : 'bg-white border-[#EAE9E3] hover:border-amber-300 hover:bg-amber-50/35 shadow-2xs'
         }`}
       >
         <div className="w-11 h-16 bg-[#F8F5EC] rounded-xl overflow-hidden border border-[#EAE9E3] shrink-0 p-0.5 flex items-center justify-center">
@@ -466,6 +475,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            setCarouselIndex(idx);
             openModal('OPPORTUNITY_DETAIL', { card: c, playerId: assignedPlayer?.id || activePlayer?.id });
           }}
           className={`px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition shrink-0 ${
@@ -480,7 +490,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     );
   };
 
-  const renderMissionCard = (c: MissionCard) => {
+  const renderMissionCard = (c: MissionCard, idx: number, isSelected: boolean) => {
     const isCompleted = c.status === 'completed';
     const statusLabel: CardStatusLabel = isCompleted ? 'Completed' : 'Active';
     const assignedPlayer = c.assignedPlayerId
@@ -501,11 +511,13 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     return (
       <div
         key={c.id}
-        onClick={() => openModal('MISSION_DETAIL', { card: c, playerId: c.assignedPlayerId || activePlayer?.id })}
+        onClick={() => setCarouselIndex(idx)}
         className={`p-2.5 rounded-2xl border transition cursor-pointer flex items-center gap-2.5 ${
-          isCompleted
-            ? 'bg-blue-50/40 border-blue-200/80 opacity-85'
-            : 'bg-white border-[#EAE9E3] hover:border-emerald-300 hover:bg-emerald-50/35 shadow-2xs'
+          isSelected
+            ? 'bg-emerald-50/75 border-emerald-400 ring-2 ring-emerald-200 shadow-xs'
+            : isCompleted
+              ? 'bg-blue-50/40 border-blue-200/80 opacity-85 hover:opacity-100'
+              : 'bg-white border-[#EAE9E3] hover:border-emerald-300 hover:bg-emerald-50/35 shadow-2xs'
         }`}
       >
         <div className="w-11 h-16 bg-[#F8F5EC] rounded-xl overflow-hidden border border-[#EAE9E3] shrink-0 p-0.5 flex items-center justify-center">
@@ -550,6 +562,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            setCarouselIndex(idx);
             openModal('MISSION_DETAIL', { card: c, playerId: c.assignedPlayerId || activePlayer?.id });
           }}
           className={`px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition shrink-0 ${
@@ -569,6 +582,161 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
     activeTab === 'crisis' ? filteredCrisis.length :
     activeTab === 'opportunity' ? filteredOpportunity.length :
     filteredMission.length;
+
+  const safeIndex = currentListCount > 0 ? Math.min(carouselIndex, currentListCount - 1) : 0;
+
+  // Build normalized showcase metadata for the active carousel card
+  const featuredCard = useMemo(() => {
+    if (currentListCount === 0) return null;
+
+    if (activeTab === 'policy') {
+      const c = filteredPolicy[safeIndex];
+      const isUsed = c.isUsed && !c.isReusable;
+      const statusLabel: CardStatusLabel = isUsed ? 'Used' : 'Active';
+      const matchedTerritory = c.targetTerritoryId ? territories.find(t => t.id === c.targetTerritoryId) : undefined;
+      const territoryOwner = matchedTerritory?.ownerId ? players.find(p => p.id === matchedTerritory.ownerId) : undefined;
+      const usedByPlayer = c.usedByPlayerId ? players.find(p => p.id === c.usedByPlayerId) : undefined;
+      const catKey = (matchedTerritory?.category || (c.category !== 'free_choice' ? c.category : undefined)) as TerritoryCategory | undefined;
+      const catConfig = catKey ? economyConfig[catKey] : undefined;
+      const cost = catConfig?.claimCost ?? matchedTerritory?.claimCost ?? c.claimCost;
+      const baseVP = catConfig?.basePoints ?? matchedTerritory?.basePoints;
+      const baseIncome = catConfig?.baseIncome ?? matchedTerritory?.baseIncome;
+
+      const description = c.isFreeChoice
+        ? 'Bebas pilih & klaim 1 wilayah kosong mana saja di peta (biaya mengikuti sektor wilayah).'
+        : matchedTerritory
+          ? `Klaim ${matchedTerritory.name} (${CATEGORY_NAMES[matchedTerritory.category]}): Biaya ${cost} GB • +${baseVP} VP • +${baseIncome} GB/siklus.`
+          : `Kartu Policy sektor ${c.category.toUpperCase()} untuk klaim wilayah (Biaya ${cost} GB).`;
+
+      return {
+        image: getCardAsset(c.image, POLICY_CARD_BACK),
+        fallbackImage: POLICY_CARD_BACK,
+        code: c.code,
+        codeClass: 'text-[#253451] bg-white border-[#EAE9E3]',
+        title: c.name,
+        description,
+        statusLabel,
+        metaPill: c.isFreeChoice ? 'Bebas Pilih' : catKey ? CATEGORY_NAMES[catKey] : undefined,
+        ownerLabel: (usedByPlayer || territoryOwner)?.name,
+        actionLabel: isUsed ? 'Detail Kartu' : 'Gunakan Kartu',
+        actionClass: isUsed
+          ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+          : 'bg-[#253451] hover:bg-[#1C273D] text-[#F4CE70]',
+        onAction: () =>
+          openModal('QUICK_CARD_ENTRY', {
+            playerId: claimTurnPlayer?.id || activePlayer?.id,
+            rollerId: claimTurnPlayer?.id || undefined,
+            cardCode: c.code,
+          }),
+      };
+    }
+
+    if (activeTab === 'crisis') {
+      const c = filteredCrisis[safeIndex];
+      const isResolved = c.isUsed && !c.isReusable;
+      const statusLabel: CardStatusLabel = isResolved ? 'Used' : 'Active';
+      const resolvedBy = c.usedByPlayerId ? players.find(p => p.id === c.usedByPlayerId) : undefined;
+
+      return {
+        image: getCardAsset(c.image, EVENT_CARD_BACK),
+        fallbackImage: EVENT_CARD_BACK,
+        code: c.code,
+        codeClass: 'text-red-700 bg-red-50 border-red-200',
+        title: c.title,
+        description: c.description,
+        statusLabel,
+        metaPill: 'Crisis Nasional',
+        ownerLabel: resolvedBy ? `${resolvedBy.name}${c.selectedOption ? ` (Opsi ${c.selectedOption})` : ''}` : undefined,
+        actionLabel: isResolved ? 'Detail Krisis' : 'Tangani Krisis',
+        actionClass: isResolved
+          ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+          : 'bg-red-600 hover:bg-red-700 text-white',
+        onAction: () => openModal('CRISIS_DETAIL', { card: c, playerId: activePlayer?.id }),
+      };
+    }
+
+    if (activeTab === 'opportunity') {
+      const c = filteredOpportunity[safeIndex];
+      const runningOwner = players.find(p => (p.activeOpportunities || []).some(o => o.id === c.id));
+      const assignedPlayer = runningOwner || (c.assignedPlayerId ? players.find(p => p.id === c.assignedPlayerId) : undefined);
+      const isUsed = c.isUsed && !c.isReusable && !runningOwner;
+      const statusLabel: CardStatusLabel = isUsed ? 'Used' : 'Active';
+      const effectSummary = [
+        c.costGB > 0 ? `Biaya ${c.costGB} GB` : 'Gratis',
+        c.immediatePoints > 0 ? `+${c.immediatePoints} VP` : '',
+        c.recurringGB > 0 ? `+${c.recurringGB} GB/siklus` : '',
+        c.isPermanent || c.durationCycles === 0 ? 'Permanen' : `${c.durationCycles} siklus`,
+      ].filter(Boolean).join(' • ');
+
+      return {
+        image: getCardAsset(c.image, EVENT_CARD_BACK),
+        fallbackImage: EVENT_CARD_BACK,
+        code: c.code,
+        codeClass: 'text-amber-800 bg-amber-50 border-amber-200',
+        title: c.title,
+        description: `${c.description}${effectSummary ? ` (${effectSummary})` : ''}`,
+        statusLabel,
+        metaPill: c.targetCategory ? CATEGORY_NAMES[c.targetCategory] : 'Stimulus',
+        ownerLabel: assignedPlayer?.name,
+        actionLabel: isUsed ? 'Detail Kartu' : 'Gunakan Kartu',
+        actionClass: isUsed
+          ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+          : 'bg-amber-500 hover:bg-amber-600 text-white',
+        onAction: () => openModal('OPPORTUNITY_DETAIL', { card: c, playerId: assignedPlayer?.id || activePlayer?.id }),
+      };
+    }
+
+    const c = filteredMission[safeIndex];
+    const isCompleted = c.status === 'completed';
+    const statusLabel: CardStatusLabel = isCompleted ? 'Completed' : 'Active';
+    const assignedPlayer = c.assignedPlayerId ? players.find(p => p.id === c.assignedPlayerId) : undefined;
+    const rewardSummary = [
+      `Hadiah +${c.rewardPoints} VP`,
+      c.rewardGB > 0 ? `+${c.rewardGB} GB` : '',
+    ].filter(Boolean).join(' • ');
+
+    return {
+      image: getCardAsset(c.image, EVENT_CARD_BACK),
+      fallbackImage: EVENT_CARD_BACK,
+      code: c.code,
+      codeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+      title: c.title,
+      description: `${c.description} (${rewardSummary})`,
+      statusLabel,
+      metaPill: 'Mission Quest',
+      ownerLabel: assignedPlayer?.name,
+      actionLabel: isCompleted ? 'Detail Misi' : c.status === 'active' ? 'Kelola Misi' : 'Ambil Misi',
+      actionClass: isCompleted
+        ? 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+        : 'bg-emerald-600 hover:bg-emerald-700 text-white',
+      onAction: () => openModal('MISSION_DETAIL', { card: c, playerId: c.assignedPlayerId || activePlayer?.id }),
+    };
+  }, [
+    activeTab,
+    currentListCount,
+    safeIndex,
+    filteredPolicy,
+    filteredCrisis,
+    filteredOpportunity,
+    filteredMission,
+    territories,
+    players,
+    economyConfig,
+    claimTurnPlayer,
+    activePlayer,
+    openModal,
+  ]);
+
+  // Compact pagination window (up to 5 page numbers)
+  const paginationPages = useMemo(() => {
+    if (currentListCount <= 5) {
+      return Array.from({ length: currentListCount }, (_, i) => i);
+    }
+    let start = Math.max(0, safeIndex - 2);
+    const end = Math.min(currentListCount - 1, start + 4);
+    start = Math.max(0, end - 4);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [currentListCount, safeIndex]);
 
   return (
     <section
@@ -754,7 +922,7 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
       </div>
 
       {/* Internal Scrollable Cards List */}
-      <div className="h-[340px] sm:h-[380px] overflow-y-auto space-y-2 pr-1">
+      <div className="h-[235px] sm:h-[265px] overflow-y-auto space-y-2 pr-1">
         {currentListCount === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8 bg-[#F8F5EC] rounded-2xl border border-dashed border-[#EAE9E3] text-xs text-[#253451]/55 font-medium">
             <Layers className="w-6 h-6 text-[#253451]/25 mb-1.5" />
@@ -762,11 +930,155 @@ export const EventCardCenter: React.FC<EventCardCenterProps> = ({
           </div>
         ) : (
           <>
-            {activeTab === 'policy' && filteredPolicy.map(renderPolicyCard)}
-            {activeTab === 'crisis' && filteredCrisis.map(renderCrisisCard)}
-            {activeTab === 'opportunity' && filteredOpportunity.map(renderOpportunityCard)}
-            {activeTab === 'mission' && filteredMission.map(renderMissionCard)}
+            {activeTab === 'policy' && filteredPolicy.map((c, idx) => renderPolicyCard(c, idx, idx === safeIndex))}
+            {activeTab === 'crisis' && filteredCrisis.map((c, idx) => renderCrisisCard(c, idx, idx === safeIndex))}
+            {activeTab === 'opportunity' && filteredOpportunity.map((c, idx) => renderOpportunityCard(c, idx, idx === safeIndex))}
+            {activeTab === 'mission' && filteredMission.map((c, idx) => renderMissionCard(c, idx, idx === safeIndex))}
           </>
+        )}
+      </div>
+
+      {/* Interactive Card Carousel & Pagination Viewer (fills remaining panel space cleanly) */}
+      <div
+        id="event-card-carousel"
+        className="flex-1 min-h-[270px] bg-[#F8F5EC] rounded-2xl border border-[#EAE9E3] p-3 flex flex-col justify-between gap-2.5"
+      >
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#EAE9E3]">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] font-display font-black text-[#253451] uppercase tracking-wider truncate">
+              Detail &amp; Pratinjau Kartu
+            </span>
+            {currentListCount > 0 && (
+              <span className="font-mono text-[10px] font-extrabold text-[#253451]/70 bg-white border border-[#EAE9E3] px-1.5 py-0.5 rounded-md shrink-0">
+                {safeIndex + 1} / {currentListCount}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCarouselIndex(i => (i > 0 ? i - 1 : Math.max(0, currentListCount - 1)))}
+              disabled={currentListCount <= 1}
+              aria-label="Kartu sebelumnya"
+              title="Kartu sebelumnya"
+              className="p-1.5 rounded-lg bg-white hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCarouselIndex(i => (i < currentListCount - 1 ? i + 1 : 0))}
+              disabled={currentListCount <= 1}
+              aria-label="Kartu berikutnya"
+              title="Kartu berikutnya"
+              className="p-1.5 rounded-lg bg-white hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {featuredCard ? (
+          <>
+            <div className="flex-1 flex flex-col sm:flex-row items-center sm:items-stretch gap-3 min-w-0">
+              <div className="w-28 sm:w-32 h-40 sm:h-44 bg-white rounded-2xl border border-[#EAE9E3] p-1.5 shadow-xs shrink-0 flex items-center justify-center self-center">
+                <img
+                  src={featuredCard.image}
+                  alt={featuredCard.title}
+                  className="w-full h-full object-contain rounded-xl"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = featuredCard.fallbackImage;
+                  }}
+                />
+              </div>
+
+              <div className="flex-1 min-w-0 w-full flex flex-col justify-between gap-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`font-mono text-[10px] font-black px-1.5 py-0.5 rounded border ${featuredCard.codeClass}`}>
+                      {featuredCard.code}
+                    </span>
+                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${STATUS_BADGE_STYLES[featuredCard.statusLabel]}`}>
+                      {featuredCard.statusLabel}
+                    </span>
+                    {featuredCard.metaPill && (
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-white text-[#253451]/80 border border-[#EAE9E3]">
+                        {featuredCard.metaPill}
+                      </span>
+                    )}
+                    {featuredCard.ownerLabel && (
+                      <span className="text-[10px] font-bold text-[#253451]/70">
+                        • {featuredCard.ownerLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="font-display font-black text-sm text-[#253451] leading-snug break-words">
+                    {featuredCard.title}
+                  </h3>
+
+                  <p className="text-[11px] text-[#253451]/80 leading-relaxed break-words">
+                    {featuredCard.description}
+                  </p>
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={featuredCard.onAction}
+                    className={`w-full sm:w-auto px-4 py-2 rounded-xl text-[11px] font-extrabold uppercase tracking-wider transition shadow-2xs ${featuredCard.actionClass}`}
+                  >
+                    {featuredCard.actionLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {currentListCount > 1 && (
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EAE9E3]">
+                <button
+                  type="button"
+                  onClick={() => setCarouselIndex(i => (i > 0 ? i - 1 : currentListCount - 1))}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[10px] font-extrabold text-[#253451] transition flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                  <span>Sebelumnya</span>
+                </button>
+
+                <div className="flex items-center gap-1 flex-wrap justify-center">
+                  {paginationPages.map(pageIdx => (
+                    <button
+                      key={pageIdx}
+                      type="button"
+                      onClick={() => setCarouselIndex(pageIdx)}
+                      className={`min-w-[24px] h-6 px-1.5 rounded-lg font-mono text-[10px] font-black transition ${
+                        pageIdx === safeIndex
+                          ? 'bg-[#253451] text-[#F4CE70] shadow-2xs'
+                          : 'bg-white hover:bg-[#EAE9E3] text-[#253451]/75 border border-[#EAE9E3]'
+                      }`}
+                    >
+                      {pageIdx + 1}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCarouselIndex(i => (i < currentListCount - 1 ? i + 1 : 0))}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[10px] font-extrabold text-[#253451] transition flex items-center gap-1"
+                >
+                  <span>Berikutnya</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-6 text-xs text-[#253451]/55 font-medium">
+            <Layers className="w-6 h-6 text-[#253451]/25 mb-1.5" />
+            <span>Pilih atau ubah filter untuk melihat pratinjau kartu.</span>
+          </div>
         )}
       </div>
     </section>
