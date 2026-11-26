@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ZoomIn,
   ZoomOut,
@@ -23,11 +23,8 @@ export const MapBoardSection: React.FC = () => {
     openModal
   } = useGame();
 
-  // Zoom & Pan state
+  // Zoom state (map position is locked at center; pan/drag is disabled)
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [startPan, setStartPan] = useState({ x: 0, y: 0 });
 
   // Map Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -37,58 +34,27 @@ export const MapBoardSection: React.FC = () => {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Zoom handlers
-  const handleZoomIn = () => setZoom(z => Math.min(3.5, z + 0.25));
-  const handleZoomOut = () => setZoom(z => Math.max(0.6, z - 0.25));
+  // Zoom handlers (always anchored to map center)
+  const handleZoomIn = () => setZoom(z => Math.min(3.5, Math.round((z + 0.25) * 100) / 100));
+  const handleZoomOut = () => setZoom(z => Math.max(0.6, Math.round((z - 0.25) * 100) / 100));
   const handleResetView = () => {
     setZoom(1);
-    setPan({ x: 0, y: 0 });
   };
 
-  // Wheel zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 0.15 : -0.15;
-    setZoom(z => Math.max(0.6, Math.min(3.5, z + zoomFactor)));
-  };
+  // Non-passive wheel listener so scrolling zooms around center without scrolling the page
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-  // Mouse pan handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.territory-marker')) return;
-    setIsPanning(true);
-    setStartPan({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 0.15 : -0.15;
+      setZoom(z => Math.max(0.6, Math.min(3.5, Math.round((z + zoomFactor) * 100) / 100)));
+    };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({ x: e.clientX - startPan.x, y: e.clientY - startPan.y });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  // Touch pan handlers for Mobile & Tablet
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      if ((e.target as HTMLElement).closest('.territory-marker')) return;
-      const touch = e.touches[0];
-      setIsPanning(true);
-      setStartPan({ x: touch.clientX - pan.x, y: touch.clientY - pan.y });
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (isPanning && e.touches.length === 1) {
-      const touch = e.touches[0];
-      setPan({ x: touch.clientX - startPan.x, y: touch.clientY - startPan.y });
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setIsPanning(false);
-  };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Filtered territories
   const filteredTerritories = territories.filter(t => {
@@ -223,28 +189,21 @@ export const MapBoardSection: React.FC = () => {
           </button>
 
           <span className="ml-auto text-[10px] font-bold text-[#253451]/45 hidden md:inline">
-            Drag untuk geser • Scroll untuk zoom
+            Scroll atau tombol untuk zoom • Posisi peta terkunci
           </span>
         </div>
       </div>
 
-      {/* Proportional Board Canvas: fills column width cleanly without wide empty margins */}
+      {/* Proportional Board Canvas: locked at center, zoom-only without drag/pan */}
       <div
         ref={containerRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onWheel={handleWheel}
-        className="w-full aspect-[1209/1024] max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing p-1.5 select-none touch-none"
+        onDragStart={(e) => e.preventDefault()}
+        className="w-full aspect-[1209/1024] max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-default p-1.5 select-none touch-pan-y"
       >
         <div
           className="w-full h-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transform: `scale(${zoom})`,
             transformOrigin: 'center center',
           }}
         >
