@@ -245,18 +245,12 @@ export const SinglePageDashboard: React.FC = () => {
             <EventCardCenter activeTab={eventTab} onTabChange={setEventTab} />
           </div>
 
-          {/* SISI KANAN / UTAMA: MAP WILAYAH & SISTEM DADU */}
+          {/* SISI KANAN / UTAMA: MAP WILAYAH, SISTEM DADU & RIWAYAT PERMAINAN */}
           <div className="lg:col-span-7 w-full flex flex-col gap-3.5 min-w-0">
             <MapBoardSection />
             <DiceSection />
+            <GameHistorySection />
           </div>
-        </div>
-
-        {/* =========================================================================
-            C. ROW PENDUKUNG: RIWAYAT PERMAINAN
-           ========================================================================= */}
-        <div className="w-full">
-          <GameHistorySection />
         </div>
       </main>
 
