@@ -128,6 +128,16 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
   const [customGameDurationMin, setCustomGameDurationMin] = useState<string>(
     (settings.gameDurationMinutes || 30).toString()
   );
+  const [customDurationError, setCustomDurationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCustomIntervalMin((settings.economicIntervalSeconds / 60).toString());
+  }, [settings.economicIntervalSeconds]);
+
+  useEffect(() => {
+    setCustomGameDurationMin((settings.gameDurationMinutes || 30).toString());
+    setCustomDurationError(null);
+  }, [settings.gameDurationMinutes]);
 
   // Global resource apply values
   const [globalGB, setGlobalGB] = useState<number>(20);
@@ -252,8 +262,34 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
   };
 
   // Match timer configuration
+  const gameDurationPresets = [10, 15, 20, 30, 45, 60];
+
+  const validateCustomDuration = (
+    raw: string
+  ): { valid: true; minutes: number } | { valid: false; error: string } => {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      return { valid: false, error: 'Durasi tidak boleh kosong. Masukkan minimal 10 menit.' };
+    }
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      return { valid: false, error: 'Masukkan angka menit yang valid (minimal 10 menit).' };
+    }
+    const mins = Number(trimmed);
+    if (!Number.isFinite(mins) || Number.isNaN(mins) || mins <= 0) {
+      return { valid: false, error: 'Durasi harus lebih dari 0 (minimal 10 menit).' };
+    }
+    if (!Number.isInteger(mins)) {
+      return { valid: false, error: 'Durasi harus berupa angka menit bulat.' };
+    }
+    if (mins < 10) {
+      return { valid: false, error: 'Durasi pertandingan minimal 10 menit.' };
+    }
+    return { valid: true, minutes: mins };
+  };
+
   const handleGameDurationSelect = (minutes: number) => {
     soundEffects.playClick();
+    setCustomDurationError(null);
     updateGameSettings({
       gameDurationMinutes: minutes,
       gameTimerRemainingSeconds: minutes * 60,
@@ -262,26 +298,20 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
   };
 
   const handleCustomGameDurationApply = () => {
-    const raw = customGameDurationMin.trim();
-    const mins = Number(raw);
-    if (raw === '' || Number.isNaN(mins)) {
-      triggerToast('Masukkan durasi menit yang valid.');
+    const validation = validateCustomDuration(customGameDurationMin);
+    if (!validation.valid) {
+      setCustomDurationError(validation.error);
+      triggerToast(validation.error);
       return;
     }
-    if (!Number.isInteger(mins)) {
-      triggerToast('Durasi harus berupa angka menit bulat.');
-      return;
-    }
-    if (mins < 10) {
-      triggerToast('Durasi pertandingan minimal 10 menit.');
-      return;
-    }
+    setCustomDurationError(null);
     soundEffects.playClick();
     updateGameSettings({
-      gameDurationMinutes: mins,
-      gameTimerRemainingSeconds: mins * 60,
+      gameDurationMinutes: validation.minutes,
+      gameTimerRemainingSeconds: validation.minutes * 60,
     });
-    triggerToast(`Durasi pertandingan diset ke ${mins} menit.`);
+    setCustomGameDurationMin(validation.minutes.toString());
+    triggerToast(`Durasi pertandingan diset ke ${validation.minutes} menit.`);
   };
 
   // Validation before starting match
@@ -315,21 +345,15 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
 
   // Handle Start Game
   const handleStart = () => {
-    const rawDuration = customGameDurationMin.trim();
-    const parsedDuration = Number(rawDuration);
-    const customDurationValid =
-      rawDuration !== '' &&
-      !Number.isNaN(parsedDuration) &&
-      Number.isInteger(parsedDuration) &&
-      parsedDuration >= 10;
-    if (customDurationValid) {
+    const customCheck = validateCustomDuration(customGameDurationMin);
+    if (customCheck.valid && customCheck.minutes !== settings.gameDurationMinutes) {
       updateGameSettings({
-        gameDurationMinutes: parsedDuration,
-        gameTimerRemainingSeconds: parsedDuration * 60,
+        gameDurationMinutes: customCheck.minutes,
+        gameTimerRemainingSeconds: customCheck.minutes * 60,
       });
     }
 
-    const effectiveDurationValid = customDurationValid || (Number(settings.gameDurationMinutes) || 0) >= 10;
+    const effectiveDurationValid = customCheck.valid || (Number(settings.gameDurationMinutes) || 0) >= 10;
     const blockingErrors = validationErrors.filter(e => !e.includes('Durasi pertandingan (Match Timer)'));
     if (!effectiveDurationValid) {
       blockingErrors.push('Durasi pertandingan (Match Timer) minimal 10 menit.');
@@ -356,8 +380,8 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
     { label: '30 Menit', seconds: 1800, note: 'Panjang' },
   ];
 
-  // Match duration presets (minimum 10 minutes)
-  const gameDurationPresets = [10, 15, 20, 30, 45, 60];
+  const activeGameDuration = settings.gameDurationMinutes || 30;
+  const isCustomDurationActive = !gameDurationPresets.includes(activeGameDuration);
 
   // Starting resources calculation for summary
   const totalCirculatingGB = players.reduce((acc, p) => acc + (p.budget || 0), 0);
@@ -453,19 +477,19 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
               <h1 className="text-2xl sm:text-3xl font-display font-black text-[#253451] tracking-tight">
                 PREPARE YOUR TERRITORY
               </h1>
-              <p className="text-xs sm:text-sm text-[#253451]/75 leading-relaxed font-medium">
-                Configure your players, resources, and game settings before entering the political battlefield. Atur komposisi pemain, warna pion resmi, modal kas awal (GB), dan frekuensi siklus ekonomi sebelum memulai perebutan kekuasaan.
+              <p className="text-xs sm:text-sm text-[#253451]/70 leading-relaxed font-medium">
+                Atur pemain, warna pion, sumber daya awal (GB &amp; VP), siklus ekonomi, dan durasi pertandingan sebelum bermain.
               </p>
             </div>
 
             {/* Match Title Input Field */}
             <div className="bg-[#F8F5EC] border border-[#EAE9E3] rounded-2xl p-4 sm:p-5 shrink-0 w-full lg:w-80 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60 flex items-center gap-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70 flex items-center gap-1">
                   <Edit3 className="w-3 h-3 text-[#253451]/60" />
-                  Nama Sesi Pertandingan
+                  Nama Sesi
                 </span>
-                <span className="text-[10px] font-extrabold text-[#73B77A]">Official Campaign</span>
+                <span className="text-[11px] font-bold text-[#73B77A]">Sesi Resmi</span>
               </div>
               <input
                 type="text"
@@ -505,11 +529,11 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                 <Users className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-display font-black text-lg text-[#253451] tracking-tight">
+                <h2 className="font-display font-black text-base sm:text-lg text-[#253451] tracking-tight">
                   Pengaturan Pemain & Pion
                 </h2>
-                <p className="text-xs text-[#253451]/60 font-medium">
-                  Setiap pemain memiliki pion unik, nama kustom, dan alokasi modal awal (GB).
+                <p className="text-xs text-[#253451]/65 font-medium">
+                  Atur nama, warna pion unik, dan modal awal setiap pemain.
                 </p>
               </div>
             </div>
@@ -517,10 +541,10 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
             {/* Player Count Badge */}
             <div className="flex items-center gap-2 self-start sm:self-auto">
               <span className="px-3 py-1 rounded-full bg-[#F8F5EC] border border-[#EAE9E3] text-xs font-extrabold text-[#253451]">
-                {players.length} / 4 Pemain Terdaftar
+                {players.length} / 4 Pemain
               </span>
-              <span className="text-[11px] text-[#253451]/50 font-bold hidden sm:inline">
-                (Min. 2 - Maks. 4)
+              <span className="text-[11px] text-[#253451]/60 font-semibold hidden sm:inline">
+                (Min. 2 – Maks. 4)
               </span>
             </div>
           </div>
@@ -573,9 +597,8 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
 
                   {/* Player Name Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60 flex items-center justify-between">
-                      <span>Nama Pemain</span>
-                      <span className="text-[9px] font-medium text-[#253451]/40">Ketik untuk mengubah</span>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70 block">
+                      Nama Pemain
                     </label>
                     <input
                       type="text"
@@ -589,10 +612,10 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                   {/* Pawn Color Selector (Unique Color Rule) */}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                        Pilihan Warna Pion
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                        Warna Pion
                       </label>
-                      <span className="text-[9px] text-[#253451]/40 font-medium">1 Warna per Pemain</span>
+                      <span className="text-[11px] text-[#253451]/55 font-medium">Unik per pemain</span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-1.5">
@@ -630,14 +653,14 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                   {/* Optional Custom Logo Upload */}
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                        Logo Khusus Pemain (Opsional)
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                        Logo Pemain (Opsional)
                       </label>
                       {player.customLogo && (
                         <button
                           type="button"
                           onClick={() => updatePlayer(player.id, { customLogo: undefined })}
-                          className="text-[9px] text-red-600 font-bold hover:underline"
+                          className="text-[11px] text-red-600 font-bold hover:underline"
                         >
                           Hapus
                         </button>
@@ -734,7 +757,7 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
 
                   {/* Name Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
                       Nama Calon Pemain
                     </label>
                     <input
@@ -748,8 +771,8 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
 
                   {/* Pawn Color Selector for New Player */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                      Pilih Warna Pion Tersedia
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                      Warna Pion Tersedia
                     </label>
                     <div className="grid grid-cols-4 gap-1.5">
                       {PAWN_COLORS.map(c => {
@@ -795,297 +818,367 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
         </section>
 
         {/* =========================================================================
-            SECTIONS D & E: SIDE-BY-SIDE PANELS (Initial Resources & Economic Settings)
+            SECTIONS D & E: BALANCED PANELS (Sumber Daya Awal & Pengaturan Ekonomi)
             ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
           {/* -----------------------------------------------------------------------
               SECTION D: INITIAL RESOURCES (Sumber Daya Awal)
               ----------------------------------------------------------------------- */}
-          <section className="bg-white rounded-3xl p-6 sm:p-7 border border-[#EAE9E3] shadow-soft-sm space-y-5 flex flex-col">
-            <div className="space-y-4">
-              {/* Header */}
-              <div className="flex items-center gap-3 border-b border-[#EAE9E3] pb-3">
-                <div className="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600">
-                  <Coins className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="font-display font-black text-base text-[#253451]">
-                    Sumber Daya Awal
-                  </h2>
-                  <p className="text-xs text-[#253451]/60 font-medium">
-                    Atur GB dan VP awal pemain.
-                  </p>
-                </div>
+          <section className="bg-white rounded-3xl p-6 sm:p-7 border border-[#EAE9E3] shadow-soft-sm space-y-4">
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-[#EAE9E3] pb-3">
+              <div className="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
+                <Coins className="w-5 h-5" />
               </div>
-
-              {/* Tournament Presets according to player count */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                    Preset Standar Turnamen Resmi:
-                  </label>
-                  <span className="text-[10px] text-[#73B77A] font-bold">Rekomendasi Resmi</span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: '25 GB', desc: 'Standar 2 Pemain', amount: 25 },
-                    { label: '20 GB', desc: 'Standar 3 Pemain', amount: 20 },
-                    { label: '15 GB', desc: 'Standar 4 Pemain', amount: 15 },
-                  ].map(preset => (
-                    <button
-                      key={preset.amount}
-                      type="button"
-                      onClick={() => {
-                        setGlobalGB(preset.amount);
-                        handleApplyGlobalGB(preset.amount);
-                      }}
-                      className="p-2.5 rounded-xl border border-[#EAE9E3] bg-[#F8F5EC] hover:bg-white hover:border-[#253451] transition text-center group"
-                    >
-                      <div className="font-display font-black text-sm text-[#253451] group-hover:text-amber-600">
-                        {preset.label}
-                      </div>
-                      <div className="text-[9px] text-[#253451]/60 font-semibold truncate">
-                        {preset.desc}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Global GB Input */}
-              <div className="space-y-1.5 pt-2">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                  GB Kustom (Semua Pemain)
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="number"
-                      min="0"
-                      value={globalGB}
-                      onChange={e => setGlobalGB(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#253451]/40 pointer-events-none">
-                      GB
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyGlobalGB(globalGB)}
-                    className="px-4 py-2 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-bold text-xs tracking-wide transition shrink-0 shadow-2xs"
-                  >
-                    Terapkan GB
-                  </button>
-                </div>
-              </div>
-
-              {/* Starting VP Settings */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                  VP Awal (Semua Pemain, Standar 0)
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="number"
-                      min="0"
-                      value={globalVP}
-                      onChange={e => setGlobalVP(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-blue-700 outline-none focus:border-[#253451]"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#253451]/40 pointer-events-none">
-                      VP
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyGlobalVP(globalVP)}
-                    className="px-4 py-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-xs border border-[#EAE9E3] transition shrink-0"
-                  >
-                    Terapkan VP
-                  </button>
-                </div>
+              <div>
+                <h2 className="font-display font-black text-base sm:text-lg text-[#253451] tracking-tight">
+                  Sumber Daya Awal
+                </h2>
+                <p className="text-xs text-[#253451]/65 font-medium">
+                  Atur modal awal (GB) dan VP pemain.
+                </p>
               </div>
             </div>
 
-            <div className="p-3 bg-[#F8F5EC] border border-[#EAE9E3] rounded-2xl text-[11px] text-[#253451]/75 leading-relaxed font-medium">
-              <span className="font-extrabold text-[#253451] block mb-0.5">Catatan:</span>
-              GB/VP bisa diterapkan ke semua pemain atau diatur per pemain pada kartu di atas.
+            {/* Tournament Presets according to player count */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                  Preset Turnamen Resmi
+                </label>
+                <span className="text-[11px] text-[#73B77A] font-bold">Rekomendasi</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: '25 GB', desc: '2 Pemain', amount: 25 },
+                  { label: '20 GB', desc: '3 Pemain', amount: 20 },
+                  { label: '15 GB', desc: '4 Pemain', amount: 15 },
+                ].map(preset => (
+                  <button
+                    key={preset.amount}
+                    type="button"
+                    onClick={() => {
+                      setGlobalGB(preset.amount);
+                      handleApplyGlobalGB(preset.amount);
+                    }}
+                    className="p-2.5 rounded-xl border border-[#EAE9E3] bg-[#F8F5EC] hover:bg-white hover:border-[#253451] transition text-center group"
+                  >
+                    <div className="font-display font-black text-sm text-[#253451] group-hover:text-amber-600">
+                      {preset.label}
+                    </div>
+                    <div className="text-[11px] text-[#253451]/60 font-semibold truncate">
+                      {preset.desc}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Global GB Input */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70 block">
+                GB Kustom (Semua Pemain)
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    value={globalGB}
+                    onChange={e => setGlobalGB(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-[#253451]/50 pointer-events-none">
+                    GB
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyGlobalGB(globalGB)}
+                  className="px-4 py-2 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-bold text-xs transition shrink-0 shadow-2xs"
+                >
+                  Terapkan GB
+                </button>
+              </div>
+            </div>
+
+            {/* Starting VP Settings */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70 block">
+                VP Awal (Semua Pemain, Standar 0)
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    value={globalVP}
+                    onChange={e => setGlobalVP(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-blue-700 outline-none focus:border-[#253451]"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-[#253451]/50 pointer-events-none">
+                    VP
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyGlobalVP(globalVP)}
+                  className="px-4 py-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-xs border border-[#EAE9E3] transition shrink-0"
+                >
+                  Terapkan VP
+                </button>
+              </div>
+            </div>
+
+            {/* Resource Note placed directly beneath VP */}
+            <div className="p-3 bg-[#F8F5EC] border border-[#EAE9E3] rounded-2xl text-xs text-[#253451]/75 leading-relaxed font-medium">
+              <span className="font-bold text-[#253451] block mb-0.5">Catatan Sumber Daya</span>
+              GB dan VP dapat diterapkan ke semua pemain sekaligus atau diatur per pemain di atas.
             </div>
           </section>
 
           {/* -----------------------------------------------------------------------
-              SECTION E: ECONOMIC SETTINGS (Pengaturan Ekonomi Awal)
+              SECTION E: ECONOMIC SETTINGS (Pengaturan Ekonomi)
               ----------------------------------------------------------------------- */}
-          <section className="bg-white rounded-3xl p-6 sm:p-7 border border-[#EAE9E3] shadow-soft-sm space-y-5 flex flex-col">
-            <div className="space-y-4">
-              {/* Header */}
-              <div className="flex items-center gap-3 border-b border-[#EAE9E3] pb-3">
-                <div className="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="font-display font-black text-base text-[#253451]">
-                    Pengaturan Ekonomi
-                  </h2>
-                  <p className="text-xs text-[#253451]/60 font-medium">
-                    Atur interval distribusi pendapatan ekonomi.
-                  </p>
-                </div>
+          <section className="bg-white rounded-3xl p-6 sm:p-7 border border-[#EAE9E3] shadow-soft-sm space-y-4">
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-[#EAE9E3] pb-3">
+              <div className="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
+                <Clock className="w-5 h-5" />
               </div>
-
-              {/* Duration Presets */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                    Pilihan Durasi Putaran:
-                  </label>
-                  <span className="text-[10px] text-[#253451]/50 font-bold">Standar: 5 Menit</span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {intervalPresets.map(preset => {
-                    const isSelected = settings.economicIntervalSeconds === preset.seconds;
-                    return (
-                      <button
-                        key={preset.seconds}
-                        type="button"
-                        onClick={() => handleIntervalSelect(preset.seconds)}
-                        className={`p-2.5 rounded-xl border text-center transition ${
-                          isSelected
-                            ? 'bg-[#253451] text-white border-[#253451] shadow-2xs font-extrabold'
-                            : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-white hover:border-[#253451]/40 font-bold'
-                        }`}
-                      >
-                        <div className="text-xs font-display">{preset.label}</div>
-                        <div className={`text-[9px] truncate ${isSelected ? 'text-[#F4CE70]' : 'text-[#253451]/50'}`}>
-                          {preset.note}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+              <div>
+                <h2 className="font-display font-black text-base sm:text-lg text-[#253451] tracking-tight">
+                  Pengaturan Ekonomi
+                </h2>
+                <p className="text-xs text-[#253451]/65 font-medium">
+                  Atur interval pembagian pendapatan otomatis.
+                </p>
               </div>
+            </div>
 
-              {/* Custom Minutes Input */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                  Kustom Menit Putaran:
+            {/* Duration Presets */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                  Durasi Putaran Ekonomi
                 </label>
+                <span className="text-[11px] text-[#253451]/60 font-semibold">Standar: 5 Menit</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {intervalPresets.map(preset => {
+                  const isSelected = settings.economicIntervalSeconds === preset.seconds;
+                  return (
+                    <button
+                      key={preset.seconds}
+                      type="button"
+                      onClick={() => handleIntervalSelect(preset.seconds)}
+                      className={`p-2.5 rounded-xl border text-center transition ${
+                        isSelected
+                          ? 'bg-[#253451] text-white border-[#253451] shadow-2xs font-extrabold'
+                          : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-white hover:border-[#253451]/40 font-bold'
+                      }`}
+                    >
+                      <div className="text-xs font-display">{preset.label}</div>
+                      <div className={`text-[10px] truncate ${isSelected ? 'text-[#F4CE70]' : 'text-[#253451]/55'}`}>
+                        {preset.note}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom Minutes Input */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70 block">
+                Kustom Menit Putaran
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  value={customIntervalMin}
+                  onChange={e => setCustomIntervalMin(e.target.value)}
+                  placeholder="Contoh: 5 atau 7.5"
+                  className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
+                />
+                <button
+                  type="button"
+                  onClick={handleCustomIntervalApply}
+                  className="px-4 py-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-xs border border-[#EAE9E3] transition shrink-0"
+                >
+                  Terapkan
+                </button>
+              </div>
+            </div>
+
+            {/* Active Cycle Badge */}
+            <div className="p-3 bg-[#F8F5EC] rounded-2xl border border-[#EAE9E3] flex justify-between items-center text-xs font-bold text-[#253451]">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#73B77A]" />
+                Interval Siklus Terpilih
+              </span>
+              <span className="font-mono text-sm font-extrabold text-[#EF956F]">
+                {Math.floor(settings.economicIntervalSeconds / 60)}m {settings.economicIntervalSeconds % 60 > 0 ? `${settings.economicIntervalSeconds % 60}s` : '00s'}
+              </span>
+            </div>
+
+            {/* Explanatory Rule Callout */}
+            <div className="p-3 bg-[#F8F5EC] border border-[#EAE9E3] rounded-2xl text-xs text-[#253451]/75 leading-relaxed font-medium">
+              <span className="font-bold text-[#253451] block mb-0.5">Mekanisme Timer</span>
+              Timer ekonomi berjalan setelah <strong>Start Game</strong>. Pendapatan wilayah dan Opportunity dibagikan saat timer mencapai 00:00.
+            </div>
+          </section>
+        </div>
+
+        {/* =========================================================================
+            SECTION E2: MATCH TIMER CONFIGURATION (Durasi Pertandingan + Custom)
+            ========================================================================= */}
+        <section className="bg-white rounded-3xl p-6 sm:p-7 border border-[#EAE9E3] shadow-soft-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE9E3] pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-[#253451]/10 border border-[#253451]/15 flex items-center justify-center text-[#253451] shrink-0">
+                <Compass className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-display font-black text-base sm:text-lg text-[#253451] tracking-tight">
+                  Durasi Pertandingan (Match Timer)
+                </h2>
+                <p className="text-xs text-[#253451]/65 font-medium">
+                  Pilih preset durasi atau atur waktu sendiri (minimal 10 menit).
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-bold text-[#EF956F] bg-[#EF956F]/10 border border-[#EF956F]/25 px-3 py-1 rounded-full self-start sm:self-auto shrink-0">
+              Min. 10 Menit
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Presets */}
+            <div className="lg:col-span-7 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70">
+                  Pilihan Durasi Cepat
+                </label>
+                <span className="text-[11px] text-[#253451]/60 font-semibold">Standar: 30 Menit</span>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 gap-2">
+                {gameDurationPresets.map(minutes => {
+                  const isSelected = activeGameDuration === minutes;
+                  return (
+                    <button
+                      key={minutes}
+                      type="button"
+                      onClick={() => handleGameDurationSelect(minutes)}
+                      className={`p-2.5 rounded-xl border text-center transition ${
+                        isSelected
+                          ? 'bg-[#253451] text-white border-[#253451] shadow-2xs font-extrabold'
+                          : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-white hover:border-[#253451]/40 font-bold'
+                      }`}
+                    >
+                      <div className="text-xs font-display">{minutes} Menit</div>
+                      <div className={`text-[10px] ${isSelected ? 'text-[#F4CE70]' : 'text-[#253451]/55'}`}>
+                        {minutes === 30 ? 'Standar' : 'Preset'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom Duration + Active Status */}
+            <div className="lg:col-span-5 space-y-3">
+              <div
+                className={`p-3.5 rounded-2xl border space-y-2 transition ${
+                  isCustomDurationActive
+                    ? 'bg-[#253451]/5 border-[#253451] ring-1 ring-[#253451]/15'
+                    : 'bg-[#F8F5EC] border-[#EAE9E3]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="custom-match-duration"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/70"
+                  >
+                    Custom Duration (Menit)
+                  </label>
+                  {isCustomDurationActive && (
+                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 inline-flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      Aktif: {activeGameDuration} Menit
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex gap-2">
                   <input
+                    id="custom-match-duration"
                     type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={customIntervalMin}
-                    onChange={e => setCustomIntervalMin(e.target.value)}
-                    placeholder="Contoh: 5 atau 7.5"
-                    className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
+                    min="10"
+                    step="1"
+                    value={customGameDurationMin}
+                    onChange={e => {
+                      setCustomGameDurationMin(e.target.value);
+                      if (customDurationError) setCustomDurationError(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCustomGameDurationApply();
+                      }
+                    }}
+                    placeholder="Contoh: 25, 40, 75, 90"
+                    className={`w-full bg-white border rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none transition ${
+                      customDurationError
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-[#EAE9E3] focus:border-[#253451]'
+                    }`}
                   />
                   <button
                     type="button"
-                    onClick={handleCustomIntervalApply}
-                    className="px-4 py-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-xs border border-[#EAE9E3] transition shrink-0"
+                    onClick={handleCustomGameDurationApply}
+                    className="px-4 py-2 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-bold text-xs transition shrink-0 shadow-2xs"
                   >
                     Terapkan
                   </button>
                 </div>
+
+                {customDurationError ? (
+                  <p className="text-[11px] font-semibold text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{customDurationError}</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#253451]/60 font-medium">
+                    Masukkan angka bulat minimal 10 menit (misal: 25, 40, 75, 90).
+                  </p>
+                )}
               </div>
 
-              {/* Active Cycle Badge (Note: Timer countdown does NOT run before Start Game) */}
-              <div className="p-3 bg-[#F8F5EC] rounded-2xl border border-[#EAE9E3] flex justify-between items-center text-xs font-bold text-[#253451]">
+              <div className="p-3.5 bg-[#253451] text-white rounded-2xl flex justify-between items-center text-xs font-bold gap-2">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#73B77A]" />
-                  Interval Siklus Terpilih:
+                  <Clock className="w-4 h-4 text-[#F4CE70] shrink-0" />
+                  <span>Match Timer Dimulai Saat Start</span>
                 </span>
-                <span className="font-mono text-sm font-extrabold text-[#EF956F]">
-                  {Math.floor(settings.economicIntervalSeconds / 60)}m {settings.economicIntervalSeconds % 60 > 0 ? `${settings.economicIntervalSeconds % 60}s` : '00s'}
-                </span>
-              </div>
-
-              {/* Match Timer Configuration */}
-              <div className="space-y-2.5 pt-3 border-t border-[#EAE9E3]">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-[11px] font-extrabold uppercase tracking-wider text-[#253451]/65">
-                    Durasi Pertandingan (Match Timer)
-                  </label>
-                  <span className="text-[10px] text-[#EF956F] font-bold shrink-0">Min. 10 menit</span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {gameDurationPresets.map(minutes => {
-                    const isSelected = (settings.gameDurationMinutes || 30) === minutes;
-                    return (
-                      <button
-                        key={minutes}
-                        type="button"
-                        onClick={() => handleGameDurationSelect(minutes)}
-                        className={`p-2 rounded-xl border text-center transition ${
-                          isSelected
-                            ? 'bg-[#253451] text-white border-[#253451] shadow-2xs font-extrabold'
-                            : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-white hover:border-[#253451]/40 font-bold'
-                        }`}
-                      >
-                        <div className="text-xs font-display">{minutes} Menit</div>
-                        <div className={`text-[9px] ${isSelected ? 'text-[#F4CE70]' : 'text-[#253451]/50'}`}>
-                          {minutes === 30 ? 'Standar' : 'Preset'}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
-                    Custom Duration (menit)
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      min="10"
-                      step="1"
-                      value={customGameDurationMin}
-                      onChange={e => setCustomGameDurationMin(e.target.value)}
-                      placeholder="Contoh: 25, 40, 75"
-                      className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCustomGameDurationApply}
-                      className="px-4 py-2 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-white font-bold text-xs transition shrink-0"
-                    >
-                      Terapkan
-                    </button>
-                  </div>
-                  {!gameDurationPresets.includes(settings.gameDurationMinutes || 30) && (
-                    <div className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 inline-flex">
-                      Durasi custom aktif: {settings.gameDurationMinutes} menit
-                    </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isCustomDurationActive && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#F4CE70]/20 text-[#F4CE70] border border-[#F4CE70]/30">
+                      Custom
+                    </span>
                   )}
-                </div>
-
-                <div className="p-3 bg-[#253451] text-white rounded-2xl flex justify-between items-center text-xs font-bold gap-2">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-[#F4CE70]" />
-                    <span>Match Timer Dimulai Saat Start</span>
-                  </span>
-                  <span className="font-mono text-sm font-extrabold text-[#F4CE70] shrink-0">
-                    {settings.gameDurationMinutes || 30} Menit
+                  <span className="font-mono text-sm font-extrabold text-[#F4CE70]">
+                    {activeGameDuration} Menit
                   </span>
                 </div>
               </div>
             </div>
-
-            {/* Explanatory Rule Callout */}
-            <div className="p-3 bg-[#F8F5EC] border border-[#EAE9E3] rounded-2xl text-[11px] text-[#253451]/75 leading-relaxed font-medium">
-              <span className="font-extrabold text-[#253451] block mb-0.5">Mekanisme Timer:</span>
-              Timer ekonomi mulai setelah <strong>Start Game</strong>. Pendapatan wilayah dan Opportunity dibagikan saat timer mencapai 00:00.
-            </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
         {/* =========================================================================
             ADDITIONAL OPTIONS: ACTIVE CARD DECKS (Optional Collapsible Drawer)
@@ -1097,11 +1190,11 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                 <Layers className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-display font-extrabold text-sm text-[#253451]">
-                  Deck Kartu Aktif Pertandingan
+                <h3 className="font-display font-black text-base text-[#253451] tracking-tight">
+                  Deck Kartu Aktif
                 </h3>
-                <p className="text-[11px] text-[#253451]/60 font-medium">
-                  Kebijakan Policy, Crisis, Mission, dan Opportunity Cards.
+                <p className="text-xs text-[#253451]/65 font-medium">
+                  Pilih deck Policy, Crisis, Mission, dan Opportunity yang digunakan.
                 </p>
               </div>
             </div>
@@ -1168,11 +1261,11 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-black text-base text-[#253451]">
-                Ringkasan Konfigurasi Pertandingan (Game Summary)
+              <h2 className="font-display font-black text-base sm:text-lg text-[#253451] tracking-tight">
+                Ringkasan Konfigurasi
               </h2>
-              <p className="text-xs text-[#253451]/60 font-medium">
-                Parameter lengkap yang akan diterapkan saat memasuki game map.
+              <p className="text-xs text-[#253451]/65 font-medium">
+                Parameter yang diterapkan saat pertandingan dimulai.
               </p>
             </div>
           </div>
@@ -1181,22 +1274,22 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
             
             {/* Metric 1: Total Players */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
                 Total Pemain
               </span>
               <div className="font-display font-black text-xl text-[#253451]">
                 {players.length} Pemain
               </div>
-              <span className={`text-[10px] font-bold inline-flex items-center gap-1 ${
+              <span className={`text-[11px] font-semibold inline-flex items-center gap-1 ${
                 players.length >= 2 && players.length <= 4 ? 'text-[#73B77A]' : 'text-amber-600'
               }`}>
-                {players.length >= 2 && players.length <= 4 ? '✓ Memenuhi Syarat' : '⚠️ Min. 2 Pemain'}
+                {players.length >= 2 && players.length <= 4 ? 'Memenuhi Syarat' : 'Min. 2 Pemain'}
               </span>
             </div>
 
             {/* Metric 2: Registered Pawns */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
                 Pion Terdaftar
               </span>
               <div className="flex items-center gap-1.5 pt-1 flex-wrap">
@@ -1211,60 +1304,60 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                   />
                 ))}
               </div>
-              <span className="text-[10px] font-bold text-[#253451]/60 block truncate">
+              <span className="text-[11px] font-semibold text-[#253451]/65 block truncate">
                 {players.map(p => p.color.toUpperCase()).join(' • ')}
               </span>
             </div>
 
             {/* Metric 3: Starting GB */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
                 Kas Awal (GB)
               </span>
               <div className="font-display font-black text-xl text-amber-600">
                 {averageGB} GB
               </div>
-              <span className="text-[10px] font-bold text-[#253451]/60 block truncate">
-                Bank: {totalCirculatingGB} GB
+              <span className="text-[11px] font-semibold text-[#253451]/65 block truncate">
+                Total: {totalCirculatingGB} GB
               </span>
             </div>
 
             {/* Metric 4: Starting VP */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
                 VP Awal
               </span>
               <div className="font-display font-black text-xl text-blue-600">
                 {startingVPValue} VP
               </div>
-              <span className="text-[10px] font-bold text-[#253451]/60 block">
+              <span className="text-[11px] font-semibold text-[#253451]/65 block">
                 Per Pemain
               </span>
             </div>
 
             {/* Metric 5: Round Duration */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
                 Siklus Ekonomi
               </span>
               <div className="font-display font-black text-xl text-[#EF956F]">
                 {Math.floor(settings.economicIntervalSeconds / 60)} Menit
               </div>
-              <span className="text-[10px] font-bold text-[#253451]/60 block">
-                Siklus Otomatis
+              <span className="text-[11px] font-semibold text-[#253451]/65 block">
+                Otomatis
               </span>
             </div>
 
             {/* Metric 6: Match Timer */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs col-span-2 lg:col-span-1">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
-                Durasi Pertandingan
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#253451]/60 block">
+                Match Timer
               </span>
               <div className="font-display font-black text-xl text-[#253451]">
-                {settings.gameDurationMinutes || 30} Menit
+                {activeGameDuration} Menit
               </div>
-              <span className="text-[10px] font-bold text-[#73B77A] block">
-                Match Timer Tersinkron
+              <span className="text-[11px] font-semibold text-[#73B77A] block">
+                {isCustomDurationActive ? 'Durasi Custom' : 'Tersinkron'}
               </span>
             </div>
           </div>
@@ -1279,8 +1372,8 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
             <h3 className="font-display font-black text-xl sm:text-2xl text-[#253451] tracking-tight">
               Siap Memasuki Arena Politik?
             </h3>
-            <p className="text-xs sm:text-sm text-[#253451]/75 leading-relaxed font-medium">
-              Setelah menekan tombol di bawah, papan peta wilayah akan aktif, siklus ekonomi otomatis akan mulai berjalan, dan seluruh aksi strategis dapat dimulai.
+            <p className="text-xs sm:text-sm text-[#253451]/70 leading-relaxed font-medium">
+              Tekan Start Game untuk mengaktifkan peta wilayah, siklus ekonomi, dan Match Timer.
             </p>
           </div>
 

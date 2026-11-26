@@ -8,9 +8,8 @@ import {
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { Territory } from '../types/game';
-import { ORIGINAL_BOARD_MAP, CATEGORY_NAMES } from '../utils/categoryAssets';
-import { CategoryLogo } from './CategoryLogo';
-import { PlayerLogo, PLAYER_COLOR_THEMES } from './PlayerLogo';
+import { ORIGINAL_BOARD_MAP } from '../utils/categoryAssets';
+import { TerritoryClaimMarker } from './TerritoryClaimMarker';
 
 export const MapBoardSection: React.FC = () => {
   const {
@@ -25,8 +24,6 @@ export const MapBoardSection: React.FC = () => {
 
   // Zoom state (map position is locked at center; pan/drag is disabled)
   const [zoom, setZoom] = useState(1);
-  // Exact aspect ratio of the rendered map image (map/web.jpeg is 1215 x 1024)
-  const [boardAspect, setBoardAspect] = useState('1215 / 1024');
 
   // Map Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -200,35 +197,22 @@ export const MapBoardSection: React.FC = () => {
       <div
         ref={containerRef}
         onDragStart={(e) => e.preventDefault()}
-        className="w-full max-h-[620px] bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-default p-1.5 select-none touch-pan-y"
-        style={{ aspectRatio: boardAspect }}
+        className="w-full bg-[#E5DFCD] rounded-2xl overflow-hidden relative flex items-center justify-center cursor-default p-1.5 select-none touch-pan-y"
       >
         <div
-          className="w-full h-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
+          className="w-full flex items-center justify-center transition-transform duration-75 select-none shrink-0"
           style={{
             transform: `scale(${zoom})`,
             transformOrigin: 'center center',
           }}
         >
-          {/* Proportional Board Container: exact 1:1 coordinate frame matching the map image */}
-          <div
-            className="relative h-full max-w-full select-none shadow-[0_14px_34px_rgba(37,52,81,0.2)] rounded-xl overflow-visible ring-[3px] ring-white/95 bg-[#c8e6a2]"
-            style={{
-              aspectRatio: boardAspect,
-            }}
-          >
-            {/* Custom Physical Board Map Image */}
+          {/* 1:1 Image-locked Coordinate Frame: wrapper dimensions always equal the rendered map image */}
+          <div className="relative inline-block max-w-full select-none shadow-[0_14px_34px_rgba(37,52,81,0.2)] rounded-xl overflow-visible ring-[3px] ring-white/95 bg-[#c8e6a2]">
             <img
               src={mapSrc}
               alt="Political Territory Original Board Game Map"
-              className="w-full h-full block rounded-xl select-none pointer-events-none"
+              className="block max-w-full max-h-[600px] w-auto h-auto rounded-xl select-none pointer-events-none"
               draggable={false}
-              onLoad={(e) => {
-                const { naturalWidth, naturalHeight } = e.currentTarget;
-                if (naturalWidth > 0 && naturalHeight > 0) {
-                  setBoardAspect(`${naturalWidth} / ${naturalHeight}`);
-                }
-              }}
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.endsWith('/game-assets/map')) {
@@ -238,88 +222,31 @@ export const MapBoardSection: React.FC = () => {
             />
 
             {/* Interactive Territory Markers Overlay */}
-            {filteredTerritories.map((t: Territory) => {
-              const owner = t.ownerId ? players.find(p => p.id === t.ownerId) : null;
-              const ownerTheme = owner ? (PLAYER_COLOR_THEMES[owner.color] || PLAYER_COLOR_THEMES.red) : null;
-              const isHovered = hoveredTerritoryId === t.id;
-
-              return (
-                <div
-                  key={t.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openModal('TERRITORY_DETAIL', {
-                      territoryId: t.id,
-                      playerId: claimTurnPlayer?.id || activePlayer?.id,
-                      rollerId: claimTurnPlayer?.id || undefined
-                    });
-                  }}
-                  onMouseEnter={() => setHoveredTerritoryId(t.id)}
-                  onMouseLeave={() => setHoveredTerritoryId(null)}
-                  className={`absolute territory-marker cursor-pointer -translate-x-1/2 -translate-y-1/2 aspect-square ${
-                    isHovered ? 'z-40' : owner ? 'z-30' : 'z-20'
-                  }`}
-                  style={{
-                    left: `${t.x * 100}%`,
-                    top: `${t.y * 100}%`,
-                    width: '5.1%',
-                  }}
-                  title={`${t.name} • ${CATEGORY_NAMES[t.category]}${owner ? ` [${owner.name}]` : ' [Belum Dikuasai]'}`}
-                >
-                  {/* Visual Marker Container: centered on territory point without blocking category icon */}
-                  <div className={`w-full h-full transition-transform duration-150 ${isHovered ? 'scale-110' : ''}`}>
-                    {owner && ownerTheme ? (
-                      <div
-                        className="w-full h-full relative rounded-full border-[2.5px] transition-all duration-150"
-                        style={{
-                          borderColor: ownerTheme.primary,
-                          backgroundColor: 'transparent',
-                          boxShadow: `0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px ${ownerTheme.primary}33, 0 2px 8px rgba(0,0,0,0.28)`,
-                        }}
-                      >
-                        <div
-                          className="absolute -top-[20%] -right-[20%] w-[54%] h-[54%] rounded-full shadow-md pointer-events-none ring-2 ring-white"
-                          style={{ backgroundColor: ownerTheme.primary }}
-                        >
-                          <PlayerLogo player={owner} size="full" showBadge={false} />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full h-full rounded-full transition-all duration-150 hover:ring-2 hover:ring-amber-400 hover:bg-amber-400/15 active:scale-95" />
-                    )}
-                  </div>
-
-                  {/* Clean Hover Tooltip */}
-                  {isHovered && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-xl bg-[#253451] text-white shadow-xl pointer-events-none z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 flex flex-col items-center">
-                      <div className="flex items-center gap-1.5 text-xs font-black">
-                        {owner ? (
-                          <div className="w-3.5 h-3.5 rounded-full shrink-0 overflow-hidden">
-                            <PlayerLogo player={owner} size="full" showBadge={false} />
-                          </div>
-                        ) : (
-                          <div className="w-3.5 h-3.5 rounded-full shrink-0 overflow-hidden">
-                            <CategoryLogo category={t.category} size="full" />
-                          </div>
-                        )}
-                        <span>{t.name}</span>
-                      </div>
-                      <div className="text-[10px] text-amber-300 font-mono mt-0.5">
-                        +{t.baseIncome} GB/cy • +{t.basePoints} VP • {owner ? owner.name : 'Belum Dikuasai'}
-                      </div>
-                      <div className="w-2 h-2 bg-[#253451] rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2" />
-                    </div>
-                  )}
-
-                  {/* Optional Territory Name Label */}
-                  {showLabels && !isHovered && (
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-1.5 py-0.5 rounded-md bg-white/95 border border-[#EAE9E3] text-[9px] font-bold text-[#253451] whitespace-nowrap shadow-soft-sm pointer-events-none max-w-[95px] truncate z-20">
-                      {t.name}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            <div className="absolute inset-0 pointer-events-none">
+              {filteredTerritories.map((t: Territory) => {
+                const owner = t.ownerId ? players.find(p => p.id === t.ownerId) || null : null;
+                return (
+                  <TerritoryClaimMarker
+                    key={t.id}
+                    territory={t}
+                    owner={owner}
+                    isHovered={hoveredTerritoryId === t.id}
+                    showLabel={showLabels}
+                    markerWidthPercent={4.6}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openModal('TERRITORY_DETAIL', {
+                        territoryId: t.id,
+                        playerId: claimTurnPlayer?.id || activePlayer?.id,
+                        rollerId: claimTurnPlayer?.id || undefined,
+                      });
+                    }}
+                    onMouseEnter={() => setHoveredTerritoryId(t.id)}
+                    onMouseLeave={() => setHoveredTerritoryId(null)}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

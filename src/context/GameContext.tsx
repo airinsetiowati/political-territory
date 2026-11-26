@@ -153,7 +153,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [missionCards, setMissionCardsState] = useState<MissionCard[]>(() => getLocalState('pt_mission_cards', DEFAULT_MISSION_CARDS));
   const [opportunityCards, setOpportunityCardsState] = useState<OpportunityCard[]>(() => getLocalState('pt_opp_cards', DEFAULT_OPPORTUNITY_CARDS));
   const [logs, setLogsState] = useState<GameLog[]>(() => getLocalState('pt_logs', []));
-  const [settings, setSettingsState] = useState<GameSettings>(() => getLocalState('pt_settings', DEFAULT_SETTINGS));
+  const [settings, setSettingsState] = useState<GameSettings>(() => ({
+    ...DEFAULT_SETTINGS,
+    ...getLocalState('pt_settings', DEFAULT_SETTINGS),
+  }));
   const [economyConfig, setEconomyConfigState] = useState<EconomyConfig>(() => getLocalState('pt_economy', DEFAULT_ECONOMY));
 
   const DEFAULT_DICE_STATE: DiceState = {
@@ -433,15 +436,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Snapshot for undo
   const takeSnapshot = () => {
     const snapshot = {
-      players: JSON.parse(JSON.stringify(players)),
-      territories: JSON.parse(JSON.stringify(territories)),
-      policyCards: JSON.parse(JSON.stringify(policyCards)),
+      players: JSON.parse(JSON.stringify(playersRef.current)),
+      territories: JSON.parse(JSON.stringify(territoriesRef.current)),
+      policyCards: JSON.parse(JSON.stringify(policyCardsRef.current)),
       crisisCards: JSON.parse(JSON.stringify(crisisCards)),
       missionCards: JSON.parse(JSON.stringify(missionCards)),
       opportunityCards: JSON.parse(JSON.stringify(opportunityCards)),
-      logs: JSON.parse(JSON.stringify(logs)),
-      settings: JSON.parse(JSON.stringify(settings)),
-      diceState: JSON.parse(JSON.stringify(diceState)),
+      logs: JSON.parse(JSON.stringify(logsRef.current)),
+      settings: JSON.parse(JSON.stringify(settingsRef.current)),
+      diceState: JSON.parse(JSON.stringify(diceStateRef.current)),
     };
     setUndoHistory(prev => [snapshot, ...prev.slice(0, 9)]);
   };
@@ -466,6 +469,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettingsState(previous.settings);
     if (previous.diceState) setDiceState(previous.diceState);
     setUndoHistory(rest);
+
+    saveLocalState('pt_players', previous.players);
+    saveLocalState('pt_territories', previous.territories);
+    saveLocalState('pt_policy_cards', previous.policyCards);
+    saveLocalState('pt_crisis_cards', previous.crisisCards);
+    saveLocalState('pt_mission_cards', previous.missionCards);
+    saveLocalState('pt_opp_cards', previous.opportunityCards);
+    saveLocalState('pt_logs', previous.logs);
+    saveLocalState('pt_settings', previous.settings);
+    if (previous.diceState) saveLocalState('pt_dice', previous.diceState);
 
     broadcastGameEvent({
       type: 'STATE_SYNC',
