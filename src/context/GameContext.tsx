@@ -852,12 +852,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setOpportunityCardsState(resetOpps);
 
     // 6. Reset timer, turns, and activate
-    const intervalSecs = settings.economicIntervalSeconds || 300;
+    const currentSettings = settingsRef.current;
+    const intervalSecs = currentSettings.economicIntervalSeconds || 300;
     const initialActivePlayerId = players[0]?.id || 'red';
-    const gameDurationMinutes = Math.max(10, Number(settings.gameDurationMinutes) || 30);
+    const gameDurationMinutes = Math.max(10, Number(currentSettings.gameDurationMinutes) || 30);
     const gameDurationSeconds = gameDurationMinutes * 60;
     const nextSettings: GameSettings = {
-      ...settings,
+      ...currentSettings,
       status: 'active',
       isTimerRunning: true,
       timerRemainingSeconds: intervalSecs,
@@ -870,6 +871,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       gameTimerEndsAt: Date.now() + gameDurationSeconds * 1000,
       gameTimerExpired: false,
     };
+    settingsRef.current = nextSettings;
     setSettingsState(nextSettings);
 
     // Reset dice state
@@ -2309,7 +2311,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateGameSettings = (updates: Partial<GameSettings>) => {
     takeSnapshot();
-    setSettingsState(prev => ({ ...prev, ...updates }));
+    const updatedSettings = { ...settingsRef.current, ...updates };
+    settingsRef.current = updatedSettings;
+    setSettingsState(updatedSettings);
   };
 
   // Image assets
