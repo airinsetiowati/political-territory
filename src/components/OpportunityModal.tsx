@@ -34,6 +34,15 @@ export const OpportunityModal: React.FC = () => {
   const card: OpportunityCard | null = activeModal === 'OPPORTUNITY_DETAIL' ? activeModalData?.card : null;
   const player = players.find(p => p.id === selectedPlayerId) || players[0];
 
+  // Re-sync the beneficiary whenever a new opportunity is opened.
+  useEffect(() => {
+    if (activeModal === 'OPPORTUNITY_DETAIL') {
+      setSelectedPlayerId(activeModalData?.playerId || players[0]?.id || '');
+      setSelectedTerritoryId('');
+      setStatusMessage(null);
+    }
+  }, [activeModal, activeModalData?.playerId, activeModalData?.card?.id]);
+
   // Matching territories owned by the selected player
   const matchingTerritories: Territory[] = card?.targetCategory
     ? territories.filter(t => t.ownerId === selectedPlayerId && t.category === card.targetCategory)

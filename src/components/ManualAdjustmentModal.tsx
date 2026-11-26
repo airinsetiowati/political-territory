@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Coins, 
@@ -26,6 +26,15 @@ export const ManualAdjustmentModal: React.FC = () => {
   const [amount, setAmount] = useState<string>('5');
   const [reason, setReason] = useState<string>('');
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // The modal remains mounted; make sure the player selection follows the
+  // player that was actually clicked when the modal opens.
+  useEffect(() => {
+    if (activeModal === 'MANUAL_ADJUSTMENT') {
+      setSelectedPlayerId(activeModalData?.playerId || players[0]?.id || '');
+      setFeedback(null);
+    }
+  }, [activeModal, activeModalData?.playerId]);
 
   if (activeModal !== 'MANUAL_ADJUSTMENT') return null;
 

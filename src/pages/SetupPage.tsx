@@ -124,6 +124,11 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
     (settings.economicIntervalSeconds / 60).toString()
   );
 
+  // Match duration timer (minimum 10 minutes)
+  const [customGameDurationMin, setCustomGameDurationMin] = useState<string>(
+    (settings.gameDurationMinutes || 30).toString()
+  );
+
   // Global resource apply values
   const [globalGB, setGlobalGB] = useState<number>(20);
   const [globalVP, setGlobalVP] = useState<number>(0);
@@ -246,6 +251,30 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
     }
   };
 
+  // Match timer configuration
+  const handleGameDurationSelect = (minutes: number) => {
+    soundEffects.playClick();
+    updateGameSettings({
+      gameDurationMinutes: minutes,
+      gameTimerRemainingSeconds: minutes * 60,
+    });
+    setCustomGameDurationMin(minutes.toString());
+  };
+
+  const handleCustomGameDurationApply = () => {
+    const mins = Math.floor(parseFloat(customGameDurationMin));
+    if (!isNaN(mins) && mins >= 10) {
+      soundEffects.playClick();
+      updateGameSettings({
+        gameDurationMinutes: mins,
+        gameTimerRemainingSeconds: mins * 60,
+      });
+      triggerToast(`Durasi pertandingan diset ke ${mins} menit!`);
+    } else {
+      triggerToast('Durasi pertandingan minimal 10 menit.');
+    }
+  };
+
   // Validation before starting match
   const validationErrors: string[] = [];
   if (players.length < 2) {
@@ -268,6 +297,9 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
   }
   if (settings.economicIntervalSeconds < 10) {
     validationErrors.push('Interval siklus ekonomi harus minimal 10 detik.');
+  }
+  if (!settings.gameDurationMinutes || settings.gameDurationMinutes < 10) {
+    validationErrors.push('Durasi pertandingan (Match Timer) minimal 10 menit.');
   }
 
   const isConfigurationValid = validationErrors.length === 0;
@@ -293,6 +325,9 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
     { label: '15 Menit', seconds: 900, note: 'Santai' },
     { label: '30 Menit', seconds: 1800, note: 'Panjang' },
   ];
+
+  // Match duration presets (minimum 10 minutes)
+  const gameDurationPresets = [10, 15, 20, 30, 45, 60];
 
   // Starting resources calculation for summary
   const totalCirculatingGB = players.reduce((acc, p) => acc + (p.budget || 0), 0);
@@ -941,6 +976,68 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
                   {Math.floor(settings.economicIntervalSeconds / 60)}m {settings.economicIntervalSeconds % 60 > 0 ? `${settings.economicIntervalSeconds % 60}s` : '00s'}
                 </span>
               </div>
+
+              {/* Match Timer Configuration */}
+              <div className="space-y-2 pt-3 border-t border-[#EAE9E3]">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/60">
+                    Durasi Pertandingan (Match Timer):
+                  </label>
+                  <span className="text-[10px] text-[#EF956F] font-bold">Minimal 10 Menit</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {gameDurationPresets.map(minutes => {
+                    const isSelected = (settings.gameDurationMinutes || 30) === minutes;
+                    return (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() => handleGameDurationSelect(minutes)}
+                        className={`p-2.5 rounded-xl border text-center transition ${
+                          isSelected
+                            ? 'bg-[#253451] text-white border-[#253451] shadow-2xs font-extrabold'
+                            : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451] hover:bg-white hover:border-[#253451]/40 font-bold'
+                        }`}
+                      >
+                        <div className="text-xs font-display">{minutes} Menit</div>
+                        <div className={`text-[9px] truncate ${isSelected ? 'text-[#F4CE70]' : 'text-[#253451]/50'}`}>
+                          {minutes === 30 ? 'Standar' : minutes <= 15 ? 'Singkat' : 'Panjang'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="10"
+                    step="1"
+                    value={customGameDurationMin}
+                    onChange={e => setCustomGameDurationMin(e.target.value)}
+                    placeholder="Contoh: 25"
+                    className="w-full bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#253451] outline-none focus:border-[#253451]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCustomGameDurationApply}
+                    className="px-4 py-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-bold text-xs border border-[#EAE9E3] transition shrink-0"
+                  >
+                    Terapkan
+                  </button>
+                </div>
+
+                <div className="p-3 bg-[#253451] text-white rounded-2xl flex justify-between items-center text-xs font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#F4CE70]" />
+                    Match Timer Dimulai Saat Start:
+                  </span>
+                  <span className="font-mono text-sm font-extrabold text-[#F4CE70]">
+                    {settings.gameDurationMinutes || 30} Menit
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Explanatory Rule Callout */}
@@ -1041,7 +1138,7 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
             
             {/* Metric 1: Total Players */}
             <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
@@ -1107,15 +1204,28 @@ export const SetupPage: React.FC<SetupPageProps> = ({ onStartGame }) => {
             </div>
 
             {/* Metric 5: Round Duration */}
-            <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs col-span-2 lg:col-span-1">
+            <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
-                Durasi Putaran
+                Siklus Ekonomi
               </span>
               <div className="font-display font-black text-xl text-[#EF956F]">
                 {Math.floor(settings.economicIntervalSeconds / 60)} Menit
               </div>
               <span className="text-[10px] font-bold text-[#253451]/60 block">
                 Siklus Otomatis
+              </span>
+            </div>
+
+            {/* Metric 6: Match Timer */}
+            <div className="bg-white border border-[#EAE9E3] rounded-2xl p-4 space-y-1 shadow-2xs col-span-2 lg:col-span-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#253451]/50 block">
+                Durasi Pertandingan
+              </span>
+              <div className="font-display font-black text-xl text-[#253451]">
+                {settings.gameDurationMinutes || 30} Menit
+              </div>
+              <span className="text-[10px] font-bold text-[#73B77A] block">
+                Match Timer Tersinkron
               </span>
             </div>
           </div>

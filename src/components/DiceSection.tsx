@@ -20,7 +20,7 @@ export const DiceSection: React.FC = () => {
     settings,
     players,
     activePlayer,
-    claimTurnPlayer,
+    pendingClaims,
     isTurnLocked,
     devicePlayerId,
     setDevicePlayerId,
@@ -28,6 +28,7 @@ export const DiceSection: React.FC = () => {
     rollDice,
     nextTurn,
     setActiveTurnPlayer,
+    skipPendingClaim,
     openModal
   } = useGame();
 
@@ -57,20 +58,25 @@ export const DiceSection: React.FC = () => {
     setDevicePlayerId(val);
   };
 
-  // Authoritative turn owner resolved strictly by player ID
+  // The active turn is always the active player. Pending claims from earlier
+  // turns are listed separately and never steal the roll button.
   const turnOwnerPlayer =
     (diceState.isRolling && diceState.rollingPlayerId
       ? players.find(p => p.id === diceState.rollingPlayerId)
       : null) ||
-    claimTurnPlayer ||
     activePlayer;
+
+  const activePlayerClaim = pendingClaims.find(c => c.playerId === activePlayer?.id) || null;
+  const hasActiveClaim = Boolean(activePlayerClaim) ||
+    Boolean(diceState.hasRolledThisTurn && diceState.lastRolledByPlayerId === activePlayer?.id);
+  const activeDiceValue = activePlayerClaim?.diceValue ?? diceState.currentValue;
 
   const isAllDevices = devicePlayerId === 'all';
   const isMyTurn = isAllDevices || devicePlayerId === turnOwnerPlayer?.id;
   const canRoll =
     settings.status === 'active' &&
     isMyTurn &&
-    !diceState.hasRolledThisTurn &&
+    !hasActiveClaim &&
     !diceState.isRolling &&
     !isSubmittingRoll;
 
@@ -92,13 +98,13 @@ export const DiceSection: React.FC = () => {
   };
 
   const handleClaimClick = () => {
-    if (!isMyTurn || !turnOwnerPlayer) return;
+    if (!isMyTurn || !turnOwnerPlayer || !hasActiveClaim) return;
     setErrorMessage(null);
-    openModal('QUICK_CARD_ENTRY', { playerId: turnOwnerPlayer.id });
+    openModal('QUICK_CARD_ENTRY', { playerId: turnOwnerPlayer.id, rollerId: turnOwnerPlayer.id });
   };
 
   const handleNextTurnClick = () => {
-    if (!isMyTurn || !diceState.hasRolledThisTurn || diceState.isRolling) return;
+    if (!isMyTurn || !hasActiveClaim || diceState.isRolling) return;
     setErrorMessage(null);
     nextTurn();
   };
@@ -196,7 +202,7 @@ export const DiceSection: React.FC = () => {
                 disabled={!canManualSwitchTurn}
                 onChange={e => setActiveTurnPlayer(e.target.value)}
                 className="text-[10px] font-bold bg-white/90 border border-[#EAE9E3] rounded-md px-1.5 py-0.5 text-[#253451] outline-none cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
-                title={isTurnLocked ? 'Giliran terkunci hingga Roll Dice dan Claim selesai' : !canManualSwitchTurn ? 'Hanya pemain aktif atau Meja Bersama yang dapat mengoper giliran' : 'Oper giliran secara manual'}
+                title={isTurnLocked ? 'Giliran terkunci hanya saat dadu sedang berputar' : !canManualSwitchTurn ? 'Hanya pemain aktif atau Meja Bersama yang dapat mengoper giliran' : 'Oper giliran secara manual'}
               >
                 {players.map(p => (
                   <option key={p.id} value={p.id}>
@@ -242,11 +248,11 @@ export const DiceSection: React.FC = () => {
               <span className={`text-3xl sm:text-4xl font-mono font-black tracking-tight ${
                 diceState.isRolling
                   ? 'text-[#EF956F] animate-pulse'
-                  : diceState.currentValue !== null
+                  : activeDiceValue !== null
                     ? 'text-[#253451]'
                     : 'text-[#253451]/30'
               }`}>
-                {diceState.isRolling ? displayValue : (diceState.currentValue ?? '-')}
+                {diceState.isRolling ? displayValue : (activeDiceValue ?? '-')}
               </span>
               <span className="text-[11px] font-mono font-bold text-[#253451]/50">
                 (1 – 6)
@@ -259,7 +265,7 @@ export const DiceSection: React.FC = () => {
                   <Sparkles className="w-3 h-3 animate-spin" />
                   Mengacak angka untuk {turnOwnerPlayer?.name}...
                 </span>
-              ) : diceState.hasRolledThisTurn ? (
+              ) : hasActiveClaim ? (
                 <span className="inline-flex items-center gap-1 text-[#2e6d34] font-bold">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
                   Giliran Claim: {turnOwnerPlayer?.name} — pilih wilayah di peta atau input kartu
@@ -273,7 +279,7 @@ export const DiceSection: React.FC = () => {
 
         {/* Roll / Claim / Skip Turn Action */}
         <div className="w-full sm:w-auto flex flex-col gap-1.5 shrink-0">
-          {!diceState.hasRolledThisTurn ? (
+          {!hasActiveClaim ? (
             <button
               type="button"
               onClick={handleRollClick}
@@ -325,9 +331,9 @@ export const DiceSection: React.FC = () => {
                     ? 'bg-[#73B77A] hover:bg-[#5fa867] text-white cursor-pointer'
                     : 'bg-[#EAE9E3] text-[#253451]/40 cursor-not-allowed'
                 }`}
-                title={`Lewati klaim dan oper giliran ke ${nextPlayer?.name}`}
+                title={`Oper giliran ke ${nextPlayer?.name}. Hak klaim tetap tersimpan dan dapat diselesaikan kemudian.`}
               >
-                <span className="truncate">Lewati &amp; Oper ke {nextPlayer?.name}</span>
+                <span className="truncate">Oper ke {nextPlayer?.name} (klaim tersimpan)</span>
                 <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               </button>
             </div>
@@ -345,6 +351,73 @@ export const DiceSection: React.FC = () => {
         <div className="p-2 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-bold flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
           <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Pending claim rights survive turn changes and can be resolved later */}
+      {pendingClaims.length > 0 && (
+        <div className="space-y-1.5 bg-amber-50/60 border border-amber-200 rounded-2xl p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 flex items-center gap-1">
+              <Flag className="w-3 h-3" />
+              Hak Klaim Dadu Tersimpan ({pendingClaims.length})
+            </span>
+            <span className="text-[9px] font-bold text-amber-800/70">
+              Tetap berlaku setelah giliran berganti
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {pendingClaims.map(claim => {
+              const claimPlayer = players.find(p => p.id === claim.playerId);
+              const claimStyle = getPawnColorStyle(claimPlayer?.color);
+              const canManageClaim = isAllDevices || devicePlayerId === claim.playerId;
+              const isCurrentClaim = claim.playerId === activePlayer?.id;
+              return (
+                <div
+                  key={claim.id}
+                  className={`flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border bg-white ${claimStyle.border}`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`w-2 h-2 rounded-full ${claimStyle.dotColor} shrink-0`} />
+                    <span className="font-bold text-[11px] text-[#253451] truncate">
+                      {claimPlayer?.name || claim.playerId}
+                    </span>
+                    <span className="font-mono text-[10px] font-black text-[#253451] bg-[#F8F5EC] border border-[#EAE9E3] rounded px-1.5 py-0.5">
+                      🎲 {claim.diceValue}
+                    </span>
+                    <span className="text-[9px] font-mono text-[#253451]/50">
+                      G#{claim.turn} • R#{claim.round}
+                    </span>
+                    {isCurrentClaim && (
+                      <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        Giliran Ini
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openModal('QUICK_CARD_ENTRY', { playerId: claim.playerId, rollerId: claim.playerId })}
+                      disabled={!canManageClaim}
+                      className="px-2.5 py-1 rounded-lg bg-[#253451] hover:bg-[#1C273D] text-[#F4CE70] text-[10px] font-extrabold transition disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={canManageClaim ? `Klaim dengan dadu ${claimPlayer?.name || claim.playerId}` : `Hanya perangkat ${claimPlayer?.name || claim.playerId} atau Meja Bersama`}
+                    >
+                      Klaim
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => skipPendingClaim(claim.id)}
+                      disabled={!canManageClaim}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 border border-red-200 text-[10px] font-extrabold transition disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Lewati hak klaim ini"
+                    >
+                      Lewati
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

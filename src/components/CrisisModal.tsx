@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   ShieldAlert, 
@@ -22,6 +22,16 @@ export const CrisisModal: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<'A' | 'B' | 'C' | 'DECLINE' | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState(activeModalData?.playerId || players[0]?.id || '');
   const [statusMessage, setStatusMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  // Modals stay mounted between opens, so re-sync the target player every time
+  // a new crisis card is opened. This prevents effects from hitting Player 1.
+  useEffect(() => {
+    if (activeModal === 'CRISIS_DETAIL') {
+      setSelectedPlayerId(activeModalData?.playerId || players[0]?.id || '');
+      setSelectedOption(null);
+      setStatusMessage(null);
+    }
+  }, [activeModal, activeModalData?.playerId, activeModalData?.card?.id]);
 
   if (activeModal !== 'CRISIS_DETAIL' || !activeModalData?.card) return null;
 

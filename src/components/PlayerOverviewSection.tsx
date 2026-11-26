@@ -15,7 +15,6 @@ export const PlayerOverviewSection: React.FC = () => {
   const {
     players,
     activePlayer,
-    claimTurnPlayer,
     territories,
     calculatePlayerIncome,
     calculatePlayerVictoryPoints,
@@ -61,7 +60,7 @@ export const PlayerOverviewSection: React.FC = () => {
           const owned = territories.filter(t => t.ownerId === p.id);
           const income = calculatePlayerIncome(p);
           const vpBreakdown = calculatePlayerVictoryPoints(p);
-          const isActive = p.id === (claimTurnPlayer || activePlayer)?.id;
+          const isActive = p.id === activePlayer?.id;
           const uniqueCats = Array.from(new Set(owned.map(t => t.category))) as TerritoryCategory[];
 
           return (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Trophy, 
   X, 
@@ -6,14 +6,14 @@ import {
   Eye,
   AlertTriangle,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 export const EndGameModal: React.FC = () => {
   const { 
-    activeModal, 
-    activeModalData,
+    activeModal,
     closeModal, 
     players, 
     territories, 
@@ -21,9 +21,18 @@ export const EndGameModal: React.FC = () => {
     resetGame 
   } = useGame();
 
-  const [view, setView] = useState<'confirm' | 'standings'>('confirm');
+  const isTimeUp = activeModal === 'GAME_TIME_UP';
+  const [view, setView] = useState<'confirm' | 'standings'>(isTimeUp ? 'standings' : 'confirm');
 
-  if (activeModal !== 'END_GAME') return null;
+  useEffect(() => {
+    if (activeModal === 'GAME_TIME_UP') {
+      setView('standings');
+    } else if (activeModal === 'END_GAME') {
+      setView('confirm');
+    }
+  }, [activeModal]);
+
+  if (activeModal !== 'END_GAME' && activeModal !== 'GAME_TIME_UP') return null;
 
   // Calculate scores for all players
   const playerScores = players.map(player => {
@@ -69,7 +78,7 @@ export const EndGameModal: React.FC = () => {
           <X className="w-5 h-5" />
         </button>
 
-        {view === 'confirm' ? (
+        {view === 'confirm' && !isTimeUp ? (
           /* Step 1: Confirmation View with Explicit Warning */
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-3xl bg-red-100 border-2 border-red-200 flex items-center justify-center text-red-600 shadow-sm animate-pulse">
@@ -136,21 +145,33 @@ export const EndGameModal: React.FC = () => {
         ) : (
           /* Step 2: Final Standings & Winner Announcement */
           <div className="text-center">
-            {/* Victory Trophy */}
-            <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-[#F4CE70] via-amber-300 to-yellow-200 flex items-center justify-center shadow-lg border-2 border-amber-200 mb-3 animate-bounce text-amber-900">
-              <Trophy className="w-8 h-8 stroke-[2.5]" />
+            {/* Victory Trophy / Time-up icon */}
+            <div className={`w-16 h-16 mx-auto rounded-3xl flex items-center justify-center shadow-lg border-2 mb-3 animate-bounce ${
+              isTimeUp
+                ? 'bg-red-100 border-red-200 text-red-600'
+                : 'bg-gradient-to-tr from-[#F4CE70] via-amber-300 to-yellow-200 border-amber-200 text-amber-900'
+            }`}>
+              {isTimeUp ? <Clock className="w-8 h-8 stroke-[2.5]" /> : <Trophy className="w-8 h-8 stroke-[2.5]" />}
             </div>
 
-            <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200/60 px-3 py-1 rounded-full inline-block">
-              Peringkat Akhir Pertandingan
+            <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full inline-block border ${
+              isTimeUp
+                ? 'text-red-700 bg-red-50 border-red-200'
+                : 'text-amber-700 bg-amber-50 border-amber-200/60'
+            }`}>
+              {isTimeUp ? 'Match Timer Habis — Pertandingan Selesai' : 'Peringkat Akhir Pertandingan'}
             </span>
             <h2 className="text-2xl font-display font-black text-[#253451] tracking-tight mt-1.5 uppercase">
               {isTie ? 'Diplomatic Stalemate (TIE)' : `🏆 ${winners[0]?.player.name} Keluar Sebagai Pemenang!`}
             </h2>
             <p className="text-xs text-[#253451]/70 max-w-md mx-auto mt-1 leading-relaxed">
-              {isTie
-                ? `Beberapa pemain meraih total poin tertinggi yang sama sebesar ${highestScore} VP!`
-                : `Melalui tata kelola wilayah dan strategi kebijakan yang unggul, ${winners[0]?.player.name} memenangkan pertandingan dengan total ${highestScore} Victory Points!`}
+              {isTimeUp
+                ? `Waktu pertandingan telah mencapai 00:00. ${isTie
+                    ? `Beberapa pemain meraih total poin tertinggi yang sama sebesar ${highestScore} VP!`
+                    : `${winners[0]?.player.name} memenangkan pertandingan dengan total ${highestScore} Victory Points!`} Seluruh data sesi tetap tersimpan dan tidak dihapus otomatis.`
+                : isTie
+                  ? `Beberapa pemain meraih total poin tertinggi yang sama sebesar ${highestScore} VP!`
+                  : `Melalui tata kelola wilayah dan strategi kebijakan yang unggul, ${winners[0]?.player.name} memenangkan pertandingan dengan total ${highestScore} Victory Points!`}
             </p>
 
             {/* Leaderboard Standings Table */}
@@ -227,18 +248,29 @@ export const EndGameModal: React.FC = () => {
                 className="flex-1 py-3 rounded-2xl bg-[#F8F5EC] hover:bg-[#EAE9E3] text-[#253451] font-display font-bold text-xs uppercase tracking-wider border border-[#EAE9E3] transition flex items-center justify-center gap-2"
               >
                 <Eye className="w-4 h-4 text-[#253451]/60" />
-                <span>Tinjau Peta Permainan</span>
+                <span>{isTimeUp ? 'Tutup & Tinjau Peta' : 'Tinjau Peta Permainan'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleConfirmEndGame}
-                className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-display font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+                className={`flex-1 py-3 rounded-2xl text-white font-display font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 ${
+                  isTimeUp
+                    ? 'bg-slate-600 hover:bg-slate-700'
+                    : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700'
+                }`}
+                title={isTimeUp ? 'Hanya jika Anda memang ingin menghapus sesi dan memulai ulang' : undefined}
               >
                 <RotateCcw className="w-4 h-4 stroke-[2.5]" />
-                <span>Reset Sesi & Game Baru</span>
+                <span>{isTimeUp ? 'Reset Manual (Hapus Sesi)' : 'Reset Sesi & Game Baru'}</span>
               </button>
             </div>
+
+            {isTimeUp && (
+              <p className="mt-3 text-[10px] font-bold text-[#253451]/50 uppercase tracking-wide">
+                Notifikasi waktu habis tidak menghapus atau mereset permainan secara otomatis.
+              </p>
+            )}
           </div>
         )}
       </div>

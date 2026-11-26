@@ -190,6 +190,20 @@ export interface DiceRollLog {
 
 export type TurnPhase = 'waiting_roll' | 'rolling' | 'claim_pending' | 'claim_completed';
 
+/**
+ * A claim opportunity created by a dice roll. It is intentionally kept
+ * separately from the "current turn" flags so that it survives a turn change
+ * until the player actually claims a territory or explicitly skips it.
+ */
+export interface PendingClaim {
+  id: string;
+  playerId: string;
+  diceValue: number;
+  round: number;
+  turn: number;
+  createdAt: string;
+}
+
 export interface DiceState {
   currentValue: number | null; // Last roll value (1-6)
   isRolling: boolean;
@@ -199,6 +213,7 @@ export interface DiceState {
   lastRolledAtTurn?: number | null;
   hasRolledThisTurn: boolean;
   turnPhase?: TurnPhase;
+  pendingClaims?: PendingClaim[]; // Unresolved claim rights, preserved across turns
   history: DiceRollLog[];
 }
 
@@ -230,6 +245,12 @@ export interface GameSettings {
   diceState?: DiceState; // Dice system state
   turnLimit: number; // 0 for unlimited
   startingVP?: number;
+  // Match duration timer (configured before the match starts)
+  gameDurationMinutes: number; // minimum 10 minutes
+  gameTimerRemainingSeconds: number;
+  gameTimerRunning: boolean;
+  gameTimerEndsAt?: number | null; // absolute epoch ms, shared by all clients
+  gameTimerExpired?: boolean;
   availableDecks?: {
     policy: boolean;
     crisis: boolean;

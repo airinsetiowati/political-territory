@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Target, 
@@ -25,6 +25,15 @@ export const MissionModal: React.FC = () => {
 
   const [selectedPlayerId, setSelectedPlayerId] = useState(activeModalData?.playerId || players[0]?.id || '');
   const [statusMessage, setStatusMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  // Re-sync ownership every time a mission is opened, including missions opened
+  // from the dashboard for a specific player.
+  useEffect(() => {
+    if (activeModal === 'MISSION_DETAIL') {
+      setSelectedPlayerId(activeModalData?.playerId || players[0]?.id || '');
+      setStatusMessage(null);
+    }
+  }, [activeModal, activeModalData?.playerId, activeModalData?.card?.id]);
 
   if (activeModal !== 'MISSION_DETAIL' || !activeModalData?.card) return null;
 

@@ -281,7 +281,8 @@ export const MapBoardSection: React.FC = () => {
                     e.stopPropagation();
                     openModal('TERRITORY_DETAIL', {
                       territoryId: t.id,
-                      playerId: claimTurnPlayer?.id || activePlayer?.id
+                      playerId: claimTurnPlayer?.id || activePlayer?.id,
+                      rollerId: claimTurnPlayer?.id || undefined
                     });
                   }}
                   onMouseEnter={() => setHoveredTerritoryId(t.id)}

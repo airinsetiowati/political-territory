@@ -36,7 +36,6 @@ export const SinglePageDashboard: React.FC = () => {
     opportunityCards,
     missionCards,
     activePlayer,
-    claimTurnPlayer,
     isTurnLocked,
     devicePlayerId,
     setActiveTurnPlayer,
@@ -76,8 +75,20 @@ export const SinglePageDashboard: React.FC = () => {
     }
   };
 
-  const displayActivePlayer = claimTurnPlayer || activePlayer;
+  const displayActivePlayer = activePlayer;
   const activeBadge = getPawnBadgeStyle(displayActivePlayer?.color);
+
+  const gameDurationMinutes = settings.gameDurationMinutes || 30;
+  const gameRemainingSeconds = Math.max(
+    0,
+    settings.gameTimerRemainingSeconds ?? gameDurationMinutes * 60
+  );
+  const gameTimerMinutes = Math.floor(gameRemainingSeconds / 60);
+  const gameTimerSeconds = gameRemainingSeconds % 60;
+  const formattedGameTimer = `${String(gameTimerMinutes).padStart(2, '0')}:${String(gameTimerSeconds).padStart(2, '0')}`;
+  const gameTimerRunning = settings.status === 'active' && Boolean(settings.gameTimerRunning);
+  const gameTimerExpired = Boolean(settings.gameTimerExpired) || gameRemainingSeconds <= 0;
+  const gameTimerUrgent = gameTimerRunning && gameRemainingSeconds <= 300;
 
   const claimedCount = territories.filter(t => t.ownerId !== null).length;
   const remainingPolicies = policyCards.filter(c => !c.isUsed).length;
@@ -147,6 +158,31 @@ export const SinglePageDashboard: React.FC = () => {
 
           {/* Active Turn Spotlight + Primary Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 ml-auto lg:ml-0">
+            {/* Match Timer: synchronized from the shared absolute end timestamp */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border shadow-2xs shrink-0 ${
+                gameTimerExpired
+                  ? 'bg-red-50 border-red-300 text-red-700'
+                  : gameTimerUrgent
+                    ? 'bg-amber-50 border-amber-300 text-amber-900'
+                    : 'bg-[#F8F5EC] border-[#EAE9E3] text-[#253451]'
+              }`}
+              title={`Durasi pertandingan: ${gameDurationMinutes} menit. Timer berjalan otomatis dan tersinkronisasi.`}
+            >
+              <Clock className={`w-3.5 h-3.5 shrink-0 ${gameTimerUrgent ? 'animate-pulse' : ''}`} />
+              <div className="leading-none">
+                <span className="block text-[8px] font-extrabold uppercase tracking-wider opacity-60">
+                  Match Timer
+                </span>
+                <span className={`block font-mono font-black text-xs mt-0.5 ${gameTimerUrgent ? 'animate-pulse' : ''}`}>
+                  {gameTimerExpired ? 'WAKTU HABIS' : formattedGameTimer}
+                </span>
+              </div>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                gameTimerExpired ? 'bg-red-500' : gameTimerRunning ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+              }`} />
+            </div>
+
             {displayActivePlayer && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border ${activeBadge.border} ${activeBadge.lightBg} shadow-2xs`}>
                 <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-black/10 bg-white">
@@ -330,7 +366,7 @@ export const SinglePageDashboard: React.FC = () => {
                       <button
                         key={`qa-opp-${player.id}-${opp.id}`}
                         type="button"
-                        onClick={() => openModal('OPPORTUNITY_DETAIL', { card: opp })}
+                        onClick={() => openModal('OPPORTUNITY_DETAIL', { card: opp, playerId: player.id })}
                         className="text-left bg-white hover:bg-amber-50/70 border border-amber-200 rounded-xl px-2.5 py-1.5 transition flex items-center justify-between gap-2"
                       >
                         <div className="flex items-center gap-1.5 min-w-0">

@@ -15,7 +15,8 @@ import {
   ActiveOpportunity,
   TerritoryBonus,
   DiceState,
-  DiceRollLog
+  DiceRollLog,
+  PendingClaim
 } from '../types/game';
 import { 
   DEFAULT_TERRITORIES, 
@@ -76,7 +77,7 @@ interface GameContextType {
   closeIncomeSummary: () => void;
 
   // Territory & Claims
-  claimTerritory: (playerId: string, territoryId: string, cardCode: string) => { success: boolean; message: string };
+  claimTerritory: (playerId: string, territoryId: string, cardCode: string, rollerPlayerId?: string) => { success: boolean; message: string };
   revokeTerritoryClaim: (territoryId: string, refundGB?: boolean) => { success: boolean; message: string };
   assignTerritoryOwner: (territoryId: string, newOwnerId: string | null) => void;
   updateTerritory: (territoryId: string, updates: Partial<Territory>) => void;
@@ -117,6 +118,8 @@ interface GameContextType {
   // Dice System & Turn Management
   activePlayer: Player;
   claimTurnPlayer: Player | null;
+  pendingClaims: PendingClaim[];
+  activePendingClaim: PendingClaim | null;
   isTurnLocked: boolean;
   devicePlayerId: string;
   setDevicePlayerId: (id: string) => void;
@@ -124,6 +127,7 @@ interface GameContextType {
   rollDice: (playerId?: string) => Promise<number>;
   nextTurn: () => void;
   setActiveTurnPlayer: (playerId: string) => void;
+  skipPendingClaim: (claimId?: string) => void;
   exportGameState: () => string;
   importGameState: (jsonStr: string) => boolean;
 
@@ -161,6 +165,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     lastRolledAtTurn: null,
     hasRolledThisTurn: false,
     turnPhase: 'waiting_roll',
+    pendingClaims: [],
     history: [],
   };
   const [diceState, setDiceState] = useState<DiceState>(() => getLocalState('pt_dice', DEFAULT_DICE_STATE));
@@ -185,16 +190,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Active turn player resolution (strictly by player ID)
   const activePlayer = players.find(p => p.id === (settings.activePlayerId || players[0]?.id)) || players[0] || INITIAL_PLAYERS[0];
 
-  // Player who rolled the dice and owns the active claim phase (strictly by player ID)
-  const claimTurnPlayer = (diceState.hasRolledThisTurn && diceState.lastRolledByPlayerId)
-    ? (players.find(p => p.id === diceState.lastRolledByPlayerId) || null)
-    : null;
+  // Unresolved claim rights created by dice rolls. These survive turn changes
+  // until a claim is executed or explicitly skipped.
+  const pendingClaims = diceState.pendingClaims || [];
+  const activePendingClaim =
+    pendingClaims.find(c => c.playerId === activePlayer?.id) ||
+    pendingClaims[pendingClaims.length - 1] ||
+    null;
 
-  // Turn cannot switch while dice animation is running or a rolled claim is pending
-  const isTurnLocked = Boolean(
-    diceState.isRolling ||
-    (diceState.hasRolledThisTurn && (diceState.turnPhase ?? 'claim_pending') === 'claim_pending')
-  );
+  // Player who owns the active claim phase (strictly by player ID). Prefer the
+  // current turn player's own claim, otherwise show the oldest surviving claim.
+  const claimTurnPlayer = activePendingClaim
+    ? (players.find(p => p.id === activePendingClaim.playerId) || null)
+    : (diceState.hasRolledThisTurn && diceState.lastRolledByPlayerId
+        ? (players.find(p => p.id === diceState.lastRolledByPlayerId) || null)
+        : null);
+
+  // Only a running dice animation truly locks the table. Claims are allowed to
+  // outlive a turn change, so they must not lock manual turn switching.
+  const isTurnLocked = Boolean(diceState.isRolling);
 
   // Keep devicePlayerId valid if player roster changes
   useEffect(() => {
@@ -487,6 +501,88 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLogsState(prev => [entry, ...prev]);
   };
 
+  // Match timer helpers (absolute end time keeps every client in sync)
+  const gameTimerExpireRef = useRef<() => void>(() => {});
+  const gameTimeUpModalShownRef = useRef(false);
+
+  const expireGameTime = () => {
+    const current = settingsRef.current;
+    if (current.status === 'ended' && current.gameTimerExpired) return;
+
+    const endedSettings: GameSettings = {
+      ...current,
+      status: 'ended',
+      isTimerRunning: false,
+      gameTimerRunning: false,
+      gameTimerRemainingSeconds: 0,
+      gameTimerEndsAt: null,
+      gameTimerExpired: true,
+    };
+
+    const timeUpLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: current.currentRound,
+      type: 'game_control',
+      description: `Waktu permainan telah habis setelah ${current.gameDurationMinutes} menit. Pertandingan berakhir; seluruh data dan hasil permainan tetap tersimpan.`,
+    };
+
+    const updatedLogs = [timeUpLog, ...logsRef.current];
+    settingsRef.current = endedSettings;
+    logsRef.current = updatedLogs;
+    setSettingsState(endedSettings);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', endedSettings);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: {
+        settings: endedSettings,
+        logs: updatedLogs,
+      }
+    });
+    soundEffects.playMissionComplete();
+  };
+
+  gameTimerExpireRef.current = expireGameTime;
+
+  // Countdown is derived from the shared absolute end timestamp so refreshing
+  // the page, changing turns, or opening another tab never restarts it.
+  useEffect(() => {
+    if (settings.status !== 'active' || !settings.gameTimerRunning) return;
+    const endsAt = settings.gameTimerEndsAt;
+    if (!endsAt) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      if (remaining <= 0) {
+        gameTimerExpireRef.current();
+        return;
+      }
+      setSettingsState(prev => {
+        if (prev.gameTimerRemainingSeconds === remaining) return prev;
+        return { ...prev, gameTimerRemainingSeconds: remaining };
+      });
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [settings.status, settings.gameTimerRunning, settings.gameTimerEndsAt]);
+
+  // Notify every connected client once when the match timer runs out.
+  useEffect(() => {
+    if (settings.status === 'ended' && settings.gameTimerExpired) {
+      if (!gameTimeUpModalShownRef.current) {
+        gameTimeUpModalShownRef.current = true;
+        setActiveModal('GAME_TIME_UP');
+        setActiveModalData({ reason: 'time_up' });
+      }
+    } else {
+      gameTimeUpModalShownRef.current = false;
+    }
+  }, [settings.status, settings.gameTimerExpired]);
+
   // Calculations (Centralized Economic & VP System)
   const calculatePlayerIncome = (player: Player) => {
     // 1. Territory base income & specific territory bonuses
@@ -758,6 +854,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 6. Reset timer, turns, and activate
     const intervalSecs = settings.economicIntervalSeconds || 300;
     const initialActivePlayerId = players[0]?.id || 'red';
+    const gameDurationMinutes = Math.max(10, Number(settings.gameDurationMinutes) || 30);
+    const gameDurationSeconds = gameDurationMinutes * 60;
     const nextSettings: GameSettings = {
       ...settings,
       status: 'active',
@@ -766,6 +864,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentRound: 1,
       currentTurn: 1,
       activePlayerId: initialActivePlayerId,
+      gameDurationMinutes,
+      gameTimerRemainingSeconds: gameDurationSeconds,
+      gameTimerRunning: true,
+      gameTimerEndsAt: Date.now() + gameDurationSeconds * 1000,
+      gameTimerExpired: false,
     };
     setSettingsState(nextSettings);
 
@@ -779,6 +882,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastRolledAtTurn: null,
       hasRolledThisTurn: false,
       turnPhase: 'waiting_roll',
+      pendingClaims: [],
       history: [],
     };
     setDiceState(freshDiceState);
@@ -822,21 +926,95 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const pauseGame = () => {
     soundEffects.playClick();
-    setSettingsState(s => ({ ...s, isTimerRunning: false }));
-    addLog('game_control', 'Timer pertandingan dijeda oleh host.');
+    const current = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const remaining = current.gameTimerRunning && current.gameTimerEndsAt
+      ? Math.max(0, Math.ceil((current.gameTimerEndsAt - Date.now()) / 1000))
+      : (current.gameTimerRemainingSeconds ?? current.gameDurationMinutes * 60);
+    const updatedSettings: GameSettings = {
+      ...current,
+      isTimerRunning: false,
+      gameTimerRunning: false,
+      gameTimerRemainingSeconds: remaining,
+      gameTimerEndsAt: null,
+    };
+    const pauseLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: current.currentRound,
+      type: 'game_control',
+      description: 'Timer pertandingan dijeda oleh host.',
+    };
+    const updatedLogs = [pauseLog, ...logsRef.current];
+    settingsRef.current = updatedSettings;
+    logsRef.current = updatedLogs;
+    setSettingsState(updatedSettings);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', updatedSettings);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({ type: 'STATE_SYNC', payload: { settings: updatedSettings, logs: updatedLogs } });
   };
 
   const resumeGame = () => {
     soundEffects.playClick();
-    setSettingsState(s => ({ ...s, isTimerRunning: true }));
-    addLog('game_control', 'Timer pertandingan dilanjutkan oleh host.');
+    const current = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const remaining = Math.max(0, current.gameTimerRemainingSeconds ?? current.gameDurationMinutes * 60);
+    const updatedSettings: GameSettings = {
+      ...current,
+      isTimerRunning: true,
+      ...(current.status === 'active' && !current.gameTimerExpired && remaining > 0
+        ? {
+            gameTimerRunning: true,
+            gameTimerEndsAt: Date.now() + remaining * 1000,
+          }
+        : {}),
+    };
+    const resumeLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: current.currentRound,
+      type: 'game_control',
+      description: 'Timer pertandingan dilanjutkan oleh host.',
+    };
+    const updatedLogs = [resumeLog, ...logsRef.current];
+    settingsRef.current = updatedSettings;
+    logsRef.current = updatedLogs;
+    setSettingsState(updatedSettings);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', updatedSettings);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({ type: 'STATE_SYNC', payload: { settings: updatedSettings, logs: updatedLogs } });
   };
 
   const endGame = () => {
     takeSnapshot();
     soundEffects.playMissionComplete();
-    setSettingsState(s => ({ ...s, status: 'ended', isTimerRunning: false }));
-    addLog('game_control', 'Pertandingan diakhiri. Menghitung peringkat akhir dan pemenang.');
+    const current = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const remaining = current.gameTimerRunning && current.gameTimerEndsAt
+      ? Math.max(0, Math.ceil((current.gameTimerEndsAt - Date.now()) / 1000))
+      : current.gameTimerRemainingSeconds;
+    const updatedSettings: GameSettings = {
+      ...current,
+      status: 'ended',
+      isTimerRunning: false,
+      gameTimerRunning: false,
+      gameTimerRemainingSeconds: remaining,
+      gameTimerEndsAt: null,
+    };
+    const endLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: current.currentRound,
+      type: 'game_control',
+      description: 'Pertandingan diakhiri. Menghitung peringkat akhir dan pemenang.',
+    };
+    const updatedLogs = [endLog, ...logsRef.current];
+    settingsRef.current = updatedSettings;
+    logsRef.current = updatedLogs;
+    setSettingsState(updatedSettings);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_settings', updatedSettings);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({ type: 'STATE_SYNC', payload: { settings: updatedSettings, logs: updatedLogs } });
     openModal('END_GAME');
   };
 
@@ -904,6 +1082,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isTimerRunning: false,
       currentRound: 1,
       timerRemainingSeconds: DEFAULT_SETTINGS.economicIntervalSeconds,
+      gameDurationMinutes: DEFAULT_SETTINGS.gameDurationMinutes,
+      gameTimerRemainingSeconds: DEFAULT_SETTINGS.gameDurationMinutes * 60,
+      gameTimerRunning: false,
+      gameTimerEndsAt: null,
+      gameTimerExpired: false,
     };
     playersRef.current = resetPlayers;
     territoriesRef.current = resetTerritories;
@@ -988,44 +1171,64 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const adjustPlayerBudget = (playerId: string, delta: number, reason: string) => {
     takeSnapshot();
-    const player = players.find(p => p.id === playerId);
+    const currentPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const player = currentPlayers.find(p => p.id === playerId);
     if (!player) return;
     const newBudget = Math.max(0, player.budget + delta);
-    setPlayersState(prev => prev.map(p => p.id === playerId ? { ...p, budget: newBudget } : p));
-    addLog(
-      'gb_change',
-      `Manual GB adjustment for ${player.name}: ${delta >= 0 ? '+' : ''}${delta} GB (${reason || 'Host Adjustment'}). New balance: ${newBudget} GB.`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        gbChange: delta
-      }
-    );
+    const updatedPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, budget: newBudget } : p);
+    const logEntry: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: settingsRef.current.currentRound,
+      type: 'gb_change',
+      description: `Manual GB adjustment for ${player.name}: ${delta >= 0 ? '+' : ''}${delta} GB (${reason || 'Host Adjustment'}). New balance: ${newBudget} GB.`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      gbChange: delta,
+    };
+    const updatedLogs = [logEntry, ...logsRef.current];
+    playersRef.current = updatedPlayers;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({ type: 'STATE_SYNC', payload: { players: updatedPlayers, logs: updatedLogs } });
     soundEffects.playClick();
   };
 
   const adjustPlayerVP = (playerId: string, delta: number, reason: string) => {
     takeSnapshot();
-    const player = players.find(p => p.id === playerId);
+    const currentPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const player = currentPlayers.find(p => p.id === playerId);
     if (!player) return;
     const newVP = player.victoryPoints + delta;
-    setPlayersState(prev => prev.map(p => p.id === playerId ? { ...p, victoryPoints: newVP } : p));
-    addLog(
-      'point_change',
-      `Manual VP adjustment for ${player.name}: ${delta >= 0 ? '+' : ''}${delta} VP (${reason || 'Host Adjustment'}).`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        pointChange: delta
-      }
-    );
+    const updatedPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, victoryPoints: newVP } : p);
+    const logEntry: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: settingsRef.current.currentRound,
+      type: 'point_change',
+      description: `Manual VP adjustment for ${player.name}: ${delta >= 0 ? '+' : ''}${delta} VP (${reason || 'Host Adjustment'}).`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      pointChange: delta,
+    };
+    const updatedLogs = [logEntry, ...logsRef.current];
+    playersRef.current = updatedPlayers;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({ type: 'STATE_SYNC', payload: { players: updatedPlayers, logs: updatedLogs } });
     soundEffects.playClick();
   };
 
   // Territory Claim Logic
-  const claimTerritory = (playerId: string, territoryId: string, cardCode: string): { success: boolean; message: string } => {
+  const claimTerritory = (playerId: string, territoryId: string, cardCode: string, rollerPlayerId?: string): { success: boolean; message: string } => {
     if (isClaimingRef.current) {
       return { success: false, message: 'Proses klaim sedang diproses. Mohon tunggu sebentar.' };
     }
@@ -1033,12 +1236,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Read latest state from refs + shared storage to stay race-free in multiplayer
     const latestStorageDice = getLocalState<DiceState>('pt_dice', diceStateRef.current);
     const latestStorageSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current);
+    const latestStoragePlayers = getLocalState<Player[]>('pt_players', playersRef.current);
     const currentSettings = latestStorageSettings || settingsRef.current;
     const currentDice = latestStorageDice || diceStateRef.current;
-    const currentPlayers = playersRef.current;
-    const currentTerritories = territoriesRef.current;
-    const currentPolicyCards = policyCardsRef.current;
-    const currentLogs = logsRef.current;
+    const currentPlayers = latestStoragePlayers || playersRef.current;
+    const latestStorageTerritories = getLocalState<Territory[]>('pt_territories', territoriesRef.current);
+    const latestStoragePolicyCards = getLocalState<PolicyCard[]>('pt_policy_cards', policyCardsRef.current);
+    const latestStorageLogs = getLocalState<GameLog[]>('pt_logs', logsRef.current);
+    const currentTerritories = latestStorageTerritories || territoriesRef.current;
+    const currentPolicyCards = latestStoragePolicyCards || policyCardsRef.current;
+    const currentLogs = latestStorageLogs || logsRef.current;
     const currentDeviceId = devicePlayerIdRef.current;
 
     if (currentSettings.status !== 'active') {
@@ -1051,28 +1258,61 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const currentActive = currentPlayers.find(p => p.id === (currentSettings.activePlayerId || currentPlayers[0]?.id)) || currentPlayers[0];
 
-    // Enforce Roll Dice before Claim (Requirement 1, 2, 3, 4)
-    if (!currentDice.hasRolledThisTurn || !currentDice.lastRolledByPlayerId) {
+    // Roll Dice is still mandatory, but the roll may belong to an earlier turn.
+    const pendingClaims = currentDice.pendingClaims || [];
+    const fallbackClaim: PendingClaim | null =
+      !pendingClaims.length && currentDice.hasRolledThisTurn && currentDice.lastRolledByPlayerId && currentDice.currentValue !== null
+        ? {
+            id: `legacy-${currentDice.lastRolledByPlayerId}-${currentDice.lastRolledAtTurn ?? 0}`,
+            playerId: currentDice.lastRolledByPlayerId,
+            diceValue: currentDice.currentValue,
+            round: currentDice.lastRolledAtRound ?? currentSettings.currentRound,
+            turn: currentDice.lastRolledAtTurn ?? currentSettings.currentTurn ?? 1,
+            createdAt: new Date().toISOString(),
+          }
+        : null;
+    const availableClaims = fallbackClaim ? [...pendingClaims, fallbackClaim] : pendingClaims;
+
+    if (!availableClaims.length) {
       return {
         success: false,
         message: `${currentActive?.name || 'Pemain aktif'} harus melakukan Roll Dice terlebih dahulu sebelum mengklaim wilayah.`
       };
     }
 
-    const rollerId = currentDice.lastRolledByPlayerId;
+    // Resolve the claim that authorises this action. When the caller specifies a
+    // roller, use that exact claim; otherwise prefer the current turn player's
+    // claim, then the most recent surviving claim.
+    const authorisedClaim =
+      (rollerPlayerId ? availableClaims.find(c => c.playerId === rollerPlayerId) : undefined) ||
+      availableClaims.find(c => c.playerId === currentActive?.id) ||
+      availableClaims[availableClaims.length - 1];
+
+    // When the caller explicitly names the roller (e.g. after clicking a saved
+    // claim strip), never silently substitute another player's dice right.
+    if (rollerPlayerId && (!authorisedClaim || authorisedClaim.playerId !== rollerPlayerId)) {
+      const namedRoller = currentPlayers.find(p => p.id === rollerPlayerId);
+      return {
+        success: false,
+        message: `Hak klaim dadu ${namedRoller?.name || rollerPlayerId} tidak ditemukan atau sudah digunakan. Pilih hak klaim yang masih tersedia.`
+      };
+    }
+
+    const rollerId = authorisedClaim.playerId;
     const roller = currentPlayers.find(p => p.id === rollerId);
     if (!roller) {
       return { success: false, message: 'Pemain pelempar dadu tidak ditemukan.' };
     }
 
-    // Prevent other players from taking over the claim process (Requirement 7)
-    if (playerId && playerId !== rollerId) {
-      return {
-        success: false,
-        message: `Kepemilikan wilayah hanya dapat diberikan kepada pemain yang melempar dadu (${roller.name}). Pemain lain tidak dapat mengambil alih proses klaim.`
-      };
+    // The selected owner may be any player. The roller only authorises the claim.
+    const effectivePlayerId = playerId || rollerId;
+    const player = currentPlayers.find(p => p.id === effectivePlayerId);
+    if (!player) {
+      return { success: false, message: 'Pemain pemilik wilayah yang dipilih tidak ditemukan.' };
     }
 
+    // Only the device acting as the roller (or the shared table) may execute
+    // the claim; the chosen owner can still be any player.
     if (currentDeviceId !== 'all' && currentDeviceId !== rollerId) {
       const devicePlayer = currentPlayers.find(p => p.id === currentDeviceId);
       return {
@@ -1080,10 +1320,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: `Akses ditolak (${devicePlayer?.name || currentDeviceId}). Hanya ${roller.name} atau Meja Bersama yang dapat menyelesaikan klaim pada giliran ini.`
       };
     }
-
-    // Ownership automatically bound to the player who rolled the dice (Requirement 3)
-    const effectivePlayerId = rollerId;
-    const player = roller;
 
     const territory = currentTerritories.find(t => t.id === territoryId);
     if (!territory) return { success: false, message: 'Wilayah yang dipilih tidak valid.' };
@@ -1211,13 +1447,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return c;
       });
 
-      // 4. Record claim in Game History
+      // 4. Record claim in Game History. The owner may differ from the roller;
+      // every financial/VP effect is still applied by the selected Player ID.
+      const rollerNote = rollerId !== effectivePlayerId ? ` atas hak lemparan dadu ${roller.name}` : '';
       const claimLogEntry: GameLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         round: currentSettings.currentRound,
         type: 'claim',
-        description: `${player.name} berhasil mengklaim ${territory.name} (${territory.category.toUpperCase()}) seharga ${claimCost} GB menggunakan kartu ${card.code}. Base +${basePoints} VP, +${baseIncome} GB/siklus.`,
+        description: `${player.name} berhasil mengklaim ${territory.name} (${territory.category.toUpperCase()}) seharga ${claimCost} GB menggunakan kartu ${card.code}${rollerNote}. Base +${basePoints} VP, +${baseIncome} GB/siklus.`,
         playerId: effectivePlayerId,
         playerName: player.name,
         playerColor: player.color,
@@ -1227,38 +1465,59 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cardCode: card.code,
       };
 
-      // 5. After claim completes, advance to the next player in turn order (Requirement 5)
-      const rollerIndex = updatedPlayers.findIndex(p => p.id === effectivePlayerId);
-      const nextIndex = rollerIndex >= 0 ? (rollerIndex + 1) % updatedPlayers.length : 0;
-      const nextPlayer = updatedPlayers[nextIndex];
-      const nextTurnNum = (currentSettings.currentTurn || 1) + 1;
+      // 5. Consume exactly this claim right. Other pending claims (including an
+      // older player's claim) stay available until they are used or skipped.
+      const claimQueue = currentDice.pendingClaims || [];
+      const remainingClaims = claimQueue.filter(c => c.id !== authorisedClaim.id);
+      const rollerIsActive = rollerId === (currentSettings.activePlayerId || currentPlayers[0]?.id);
 
-      const updatedSettings: GameSettings = {
-        ...currentSettings,
-        activePlayerId: nextPlayer.id,
-        currentTurn: nextTurnNum,
-      };
+      let updatedSettings: GameSettings = currentSettings;
+      let updatedDiceState: DiceState;
+      const newLogs: GameLog[] = [];
 
-      const updatedDiceState: DiceState = {
-        ...currentDice,
-        currentValue: null,
-        hasRolledThisTurn: false,
-        isRolling: false,
-        rollingPlayerId: null,
-        lastRolledByPlayerId: null,
-        lastRolledAtRound: null,
-        lastRolledAtTurn: null,
-        turnPhase: 'waiting_roll',
-      };
+      if (rollerIsActive) {
+        // Only the player whose turn is actually active advances the turn order.
+        const rollerIndex = updatedPlayers.findIndex(p => p.id === rollerId);
+        const nextIndex = rollerIndex >= 0 ? (rollerIndex + 1) % updatedPlayers.length : 0;
+        const nextPlayer = updatedPlayers[nextIndex] || updatedPlayers[0];
+        const nextTurnNum = (currentSettings.currentTurn || 1) + 1;
 
-      const turnLogEntry: GameLog = {
-        id: `log-${Date.now() + 1}-${Math.random().toString(36).substring(2, 6)}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        round: currentSettings.currentRound,
-        type: 'game_control',
-        description: `Giliran #${nextTurnNum}: Sekarang giliran ${nextPlayer.name} (${nextPlayer.color.toUpperCase()}).`,
-      };
-      const updatedLogs: GameLog[] = [turnLogEntry, claimLogEntry, ...currentLogs];
+        updatedSettings = {
+          ...currentSettings,
+          activePlayerId: nextPlayer.id,
+          currentTurn: nextTurnNum,
+        };
+
+        updatedDiceState = {
+          ...currentDice,
+          currentValue: null,
+          hasRolledThisTurn: false,
+          isRolling: false,
+          rollingPlayerId: null,
+          lastRolledByPlayerId: null,
+          lastRolledAtRound: null,
+          lastRolledAtTurn: null,
+          turnPhase: 'waiting_roll',
+          pendingClaims: remainingClaims,
+        };
+
+        newLogs.push({
+          id: `log-${Date.now() + 1}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          round: currentSettings.currentRound,
+          type: 'game_control',
+          description: `Giliran #${nextTurnNum}: Sekarang giliran ${nextPlayer.name} (${nextPlayer.color.toUpperCase()}).`,
+        });
+      } else {
+        // An old claim is being resolved while another player is active. Do not
+        // touch the active player's roll/turn state or advance twice.
+        updatedDiceState = {
+          ...currentDice,
+          pendingClaims: remainingClaims,
+        };
+      }
+
+      const updatedLogs: GameLog[] = [claimLogEntry, ...newLogs, ...currentLogs];
 
       // Update synchronous refs immediately before React state setters
       playersRef.current = updatedPlayers;
@@ -1497,10 +1756,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Crisis Resolution
   const resolveCrisis = (crisisId: string, playerId: string, optionId: 'A' | 'B' | 'C' | 'DECLINE'): { success: boolean; message: string } => {
-    takeSnapshot();
-    const crisis = crisisCards.find(c => c.id === crisisId);
+    const latestPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const latestCrisisCards = getLocalState<CrisisCard[]>('pt_crisis_cards', crisisCards) || crisisCards;
+    const latestSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const latestLogs = logsRef.current;
+
+    const crisis = latestCrisisCards.find(c => c.id === crisisId);
     if (!crisis) return { success: false, message: 'Crisis card not found.' };
-    const player = players.find(p => p.id === playerId);
+    const player = latestPlayers.find(p => p.id === playerId);
     if (!player) return { success: false, message: 'Player not found.' };
 
     if (crisis.isUsed && !crisis.isReusable) {
@@ -1535,10 +1798,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    takeSnapshot();
     soundEffects.playCrisisAlert();
 
-    // Update player
-    setPlayersState(prev => prev.map(p => {
+    // Apply effects strictly by Player ID.
+    const updatedPlayers = latestPlayers.map(p => {
       if (p.id === playerId) {
         return {
           ...p,
@@ -1547,34 +1811,48 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return p;
-    }));
+    });
 
-    // Mark card used
-    setCrisisCardsState(prev => prev.map(c => {
+    const updatedCrisisCards = latestCrisisCards.map(c => {
       if (c.id === crisisId) {
         return {
           ...c,
           isUsed: true,
           usedByPlayerId: playerId,
           selectedOption: optionId,
-          usedAtRound: settings.currentRound,
+          usedAtRound: latestSettings.currentRound,
         };
       }
       return c;
-    }));
+    });
 
-    addLog(
-      'crisis',
-      `${player.name} resolved ${crisis.title} (${crisis.code}) selecting ${choiceText}. GB: ${netGB >= 0 ? '+' : ''}${netGB}, VP: ${pointChange >= 0 ? '+' : ''}${pointChange}.`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        gbChange: netGB,
-        pointChange,
-        cardCode: crisis.code,
-      }
-    );
+    const crisisLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: latestSettings.currentRound,
+      type: 'crisis',
+      description: `${player.name} resolved ${crisis.title} (${crisis.code}) selecting ${choiceText}. GB: ${netGB >= 0 ? '+' : ''}${netGB}, VP: ${pointChange >= 0 ? '+' : ''}${pointChange}.`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      gbChange: netGB,
+      pointChange,
+      cardCode: crisis.code,
+    };
+    const updatedLogs = [crisisLog, ...latestLogs];
+
+    playersRef.current = updatedPlayers;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setCrisisCardsState(updatedCrisisCards);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_crisis_cards', updatedCrisisCards);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: { players: updatedPlayers, crisisCards: updatedCrisisCards, logs: updatedLogs }
+    });
 
     return {
       success: true,
@@ -1584,29 +1862,47 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Mission Activation & Completion
   const activateMission = (missionId: string, playerId: string): { success: boolean; message: string } => {
-    takeSnapshot();
-    const mission = missionCards.find(m => m.id === missionId);
+    const latestPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const latestMissionCards = getLocalState<MissionCard[]>('pt_mission_cards', missionCards) || missionCards;
+    const latestSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const latestLogs = logsRef.current;
+
+    const mission = latestMissionCards.find(m => m.id === missionId);
     if (!mission) return { success: false, message: 'Mission card not found.' };
-    const player = players.find(p => p.id === playerId);
+    const player = latestPlayers.find(p => p.id === playerId);
     if (!player) return { success: false, message: 'Player not found.' };
 
+    if (mission.status === 'completed') {
+      return { success: false, message: 'Mission ini sudah diselesaikan.' };
+    }
+    if (mission.assignedPlayerId && mission.assignedPlayerId !== playerId) {
+      const assigned = latestPlayers.find(p => p.id === mission.assignedPlayerId);
+      return {
+        success: false,
+        message: `Mission "${mission.title}" sudah diambil oleh ${assigned?.name || mission.assignedPlayerId}.`
+      };
+    }
+    if (mission.status === 'active' && mission.assignedPlayerId === playerId) {
+      return { success: false, message: `Mission "${mission.title}" sudah aktif untuk ${player.name}.` };
+    }
     if (mission.isUsed && !mission.isReusable) {
       return { success: false, message: 'Mission card has already been claimed/used!' };
     }
 
+    takeSnapshot();
     soundEffects.playOpportunity();
 
-    setMissionCardsState(prev => prev.map(m => {
+    const updatedMissionCards = latestMissionCards.map(m => {
       if (m.id === missionId) {
         return {
           ...m,
-          status: 'active',
+          status: 'active' as const,
           assignedPlayerId: playerId,
           isUsed: true,
         };
       }
       return m;
-    }));
+    });
 
     // Add to player active missions
     const newActiveMission = {
@@ -1620,12 +1916,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rewardPoints: mission.rewardPoints,
       rewardGB: mission.rewardGB,
       status: 'active' as const,
-      activatedAtRound: settings.currentRound,
+      activatedAtRound: latestSettings.currentRound,
       description: mission.description,
       progressPercent: 0,
     };
 
-    setPlayersState(prev => prev.map(p => {
+    const updatedPlayers = latestPlayers.map(p => {
       if (p.id === playerId) {
         return {
           ...p,
@@ -1633,18 +1929,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return p;
-    }));
+    });
 
-    addLog(
-      'mission_activated',
-      `${player.name} activated Mission "${mission.title}" (${mission.code}).`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        cardCode: mission.code,
-      }
-    );
+    const missionLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: latestSettings.currentRound,
+      type: 'mission_activated',
+      description: `${player.name} activated Mission "${mission.title}" (${mission.code}).`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      cardCode: mission.code,
+    };
+    const updatedLogs = [missionLog, ...latestLogs];
+
+    playersRef.current = updatedPlayers;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setMissionCardsState(updatedMissionCards);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_mission_cards', updatedMissionCards);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: { players: updatedPlayers, missionCards: updatedMissionCards, logs: updatedLogs }
+    });
 
     return {
       success: true,
@@ -1653,16 +1964,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const completeMission = (missionId: string, playerId: string): { success: boolean; message: string } => {
-    takeSnapshot();
-    const mission = missionCards.find(m => m.id === missionId);
+    const latestPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const latestMissionCards = getLocalState<MissionCard[]>('pt_mission_cards', missionCards) || missionCards;
+    const latestSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const latestLogs = logsRef.current;
+
+    const mission = latestMissionCards.find(m => m.id === missionId);
     if (!mission) return { success: false, message: 'Mission not found.' };
-    const player = players.find(p => p.id === playerId);
+    const player = latestPlayers.find(p => p.id === playerId);
     if (!player) return { success: false, message: 'Player not found.' };
 
+    if (mission.assignedPlayerId !== playerId) {
+      const assigned = latestPlayers.find(p => p.id === mission.assignedPlayerId);
+      return {
+        success: false,
+        message: `Mission ini bukan milik ${player.name}. Mission sedang dipegang oleh ${assigned?.name || 'pemain lain'}.`
+      };
+    }
+    if (mission.status === 'completed') {
+      return { success: false, message: 'Mission ini sudah diselesaikan.' };
+    }
+    if (!(player.activeMissions || []).some(m => m.id === missionId && m.status === 'active')) {
+      return { success: false, message: `Mission "${mission.title}" belum diaktifkan oleh ${player.name}.` };
+    }
+
+    takeSnapshot();
     soundEffects.playMissionComplete();
 
-    // Reward player
-    setPlayersState(prev => prev.map(p => {
+    // Reward the assigned player strictly by ID.
+    const updatedPlayers = latestPlayers.map(p => {
       if (p.id === playerId) {
         const updatedMissions = (p.activeMissions || []).map(m => {
           if (m.id === missionId) return { ...m, status: 'completed' as const, progressPercent: 100 };
@@ -1676,28 +2006,42 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return p;
-    }));
+    });
 
-    // Update mission card
-    setMissionCardsState(prev => prev.map(m => {
+    const updatedMissionCards = latestMissionCards.map(m => {
       if (m.id === missionId) {
-        return { ...m, status: 'completed' };
+        return { ...m, status: 'completed' as const };
       }
       return m;
-    }));
+    });
 
-    addLog(
-      'mission_completed',
-      `MISSION COMPLETED: ${player.name} completed "${mission.title}"! Received +${mission.rewardPoints} VP and +${mission.rewardGB} GB.`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        gbChange: mission.rewardGB,
-        pointChange: mission.rewardPoints,
-        cardCode: mission.code,
-      }
-    );
+    const missionLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: latestSettings.currentRound,
+      type: 'mission_completed',
+      description: `MISSION COMPLETED: ${player.name} completed "${mission.title}"! Received +${mission.rewardPoints} VP and +${mission.rewardGB} GB.`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      gbChange: mission.rewardGB,
+      pointChange: mission.rewardPoints,
+      cardCode: mission.code,
+    };
+    const updatedLogs = [missionLog, ...latestLogs];
+
+    playersRef.current = updatedPlayers;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setMissionCardsState(updatedMissionCards);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_mission_cards', updatedMissionCards);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: { players: updatedPlayers, missionCards: updatedMissionCards, logs: updatedLogs }
+    });
 
     return {
       success: true,
@@ -1711,10 +2055,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     playerId: string,
     targetTerritoryId?: string
   ): { success: boolean; message: string } => {
-    takeSnapshot();
-    const opp = opportunityCards.find(o => o.id === opportunityId);
+    const latestPlayers = getLocalState<Player[]>('pt_players', playersRef.current) || playersRef.current;
+    const latestTerritories = getLocalState<Territory[]>('pt_territories', territoriesRef.current) || territoriesRef.current;
+    const latestOpportunityCards = getLocalState<OpportunityCard[]>('pt_opp_cards', opportunityCards) || opportunityCards;
+    const latestSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const latestLogs = logsRef.current;
+
+    const opp = latestOpportunityCards.find(o => o.id === opportunityId);
     if (!opp) return { success: false, message: 'Kartu Opportunity tidak ditemukan.' };
-    const player = players.find(p => p.id === playerId);
+    const player = latestPlayers.find(p => p.id === playerId);
     if (!player) return { success: false, message: 'Pemain tidak ditemukan.' };
 
     if (opp.isUsed && !opp.isReusable) {
@@ -1737,7 +2086,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           message: `Kartu ini memiliki logo kategori ${opp.targetCategory.toUpperCase()}. Anda wajib memilih satu wilayah milik Anda dengan kategori yang sama!`
         };
       }
-      targetTerritory = territories.find(t => t.id === targetTerritoryId);
+      targetTerritory = latestTerritories.find(t => t.id === targetTerritoryId);
       if (!targetTerritory) {
         return { success: false, message: 'Wilayah sasaran yang dipilih tidak ditemukan.' };
       }
@@ -1755,6 +2104,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    takeSnapshot();
     soundEffects.playOpportunity();
 
     // 2. Financial & VP changes
@@ -1773,12 +2123,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       targetCategory: opp.targetCategory,
       targetTerritoryId: targetTerritory?.id,
       targetTerritoryName: targetTerritory?.name,
-      activatedAtRound: settings.currentRound,
+      activatedAtRound: latestSettings.currentRound,
       description: opp.description,
     };
 
-    // 4. Update player state
-    setPlayersState(prev => prev.map(p => {
+    // 4. Update player state strictly by Player ID.
+    const updatedPlayers = latestPlayers.map(p => {
       if (p.id === playerId) {
         return {
           ...p,
@@ -1790,11 +2140,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return p;
-    }));
+    });
 
     // 5. If card targeted a single territory, attach bonus to ONLY that single territory
+    let updatedTerritories = latestTerritories;
     if (targetTerritory) {
-      setTerritoriesState(prev => prev.map(t => {
+      updatedTerritories = latestTerritories.map(t => {
         if (t.id === targetTerritory!.id) {
           const newBonus: TerritoryBonus = {
             id: `bonus-${opp.id}-${Date.now()}`,
@@ -1813,11 +2164,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
         }
         return t;
-      }));
+      });
     }
 
-    // 6. Mark card as used
-    setOpportunityCardsState(prev => prev.map(o => {
+    // 6. Mark card as used by the selected Player ID.
+    const updatedOpportunityCards = latestOpportunityCards.map(o => {
       if (o.id === opportunityId) {
         return {
           ...o,
@@ -1826,7 +2177,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return o;
-    }));
+    });
 
     // 7. Add log to Game History
     const targetDesc = targetTerritory 
@@ -1838,19 +2189,42 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       effectSummary += `, Pendapatan: +${opp.recurringGB} GB/putaran (${isPerm ? 'Permanen' : `${opp.durationCycles} putaran`})`;
     }
 
-    addLog(
-      'opportunity',
-      `${player.name} menggunakan Opportunity "${opp.title}" (${opp.code})${targetDesc}. ${effectSummary}.`,
-      {
-        playerId,
-        playerName: player.name,
-        playerColor: player.color,
-        gbChange: netImmediateGB,
-        pointChange: immediateVP,
-        cardCode: opp.code,
-        territoryId: targetTerritory?.id,
+    const opportunityLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: latestSettings.currentRound,
+      type: 'opportunity',
+      description: `${player.name} menggunakan Opportunity "${opp.title}" (${opp.code})${targetDesc}. ${effectSummary}.`,
+      playerId,
+      playerName: player.name,
+      playerColor: player.color,
+      gbChange: netImmediateGB,
+      pointChange: immediateVP,
+      cardCode: opp.code,
+      territoryId: targetTerritory?.id,
+    };
+    const updatedLogs = [opportunityLog, ...latestLogs];
+
+    playersRef.current = updatedPlayers;
+    territoriesRef.current = updatedTerritories;
+    logsRef.current = updatedLogs;
+    setPlayersState(updatedPlayers);
+    setTerritoriesState(updatedTerritories);
+    setOpportunityCardsState(updatedOpportunityCards);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_players', updatedPlayers);
+    saveLocalState('pt_territories', updatedTerritories);
+    saveLocalState('pt_opp_cards', updatedOpportunityCards);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: {
+        players: updatedPlayers,
+        territories: updatedTerritories,
+        opportunityCards: updatedOpportunityCards,
+        logs: updatedLogs,
       }
-    );
+    });
 
     return {
       success: true,
@@ -1985,12 +2359,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const currentTurnNum = currentSettings.currentTurn || 1;
     const currentRoundNum = currentSettings.currentRound || 1;
+    const existingActiveClaim = (currentDice.pendingClaims || []).find(c => c.playerId === currentActive.id);
 
     if (
+      existingActiveClaim ||
       currentDice.hasRolledThisTurn ||
       (currentDice.lastRolledAtTurn === currentTurnNum && currentDice.lastRolledByPlayerId === currentActive.id)
     ) {
-      throw new Error(`${currentActive.name} sudah melempar dadu pada giliran ini. Selesaikan atau lewati klaim terlebih dahulu.`);
+      throw new Error(`${currentActive.name} sudah memiliki hasil dadu yang belum diselesaikan. Klaim wilayah atau lewati klaim tersebut terlebih dahulu.`);
     }
 
     isRollingRef.current = true;
@@ -2047,7 +2423,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       };
 
+      const pendingClaim: PendingClaim = {
+        id: `claim-${currentActive.id}-${currentTurnNum}-${Date.now()}`,
+        playerId: currentActive.id,
+        diceValue: rollValue,
+        round: currentRoundNum,
+        turn: currentTurnNum,
+        createdAt: new Date().toISOString(),
+      };
+
       const updatedDiceState: DiceState = {
+        ...latestDice,
         currentValue: rollValue,
         isRolling: false,
         rollingPlayerId: null,
@@ -2056,6 +2442,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         lastRolledAtTurn: currentTurnNum,
         hasRolledThisTurn: true,
         turnPhase: 'claim_pending',
+        pendingClaims: [
+          ...(latestDice.pendingClaims || []).filter(c => c.id !== pendingClaim.id),
+          pendingClaim,
+        ],
         history: [newLog, ...(latestDice.history || [])].slice(0, 50),
       };
 
@@ -2106,12 +2496,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (currentSettings.status !== 'active') return;
     if (currentPlayers.length === 0) return;
-    // Do not allow turn switch while dice animation is running or before dice has been rolled
+    // Do not allow turn switch while dice animation is running.
     if (isRollingRef.current || currentDice.isRolling) return;
-    if (!currentDice.hasRolledThisTurn || !currentDice.lastRolledByPlayerId) return;
 
-    const currentOwnerId = currentDice.lastRolledByPlayerId || currentSettings.activePlayerId || currentPlayers[0]?.id;
-    // Prevent other player devices from skipping the active roller's claim phase
+    const currentOwnerId = currentSettings.activePlayerId || currentPlayers[0]?.id;
+    const activeClaim = (currentDice.pendingClaims || []).find(c => c.playerId === currentOwnerId);
+    // The active player must roll (or already own a pending claim) before passing.
+    if (!currentDice.hasRolledThisTurn && !activeClaim) return;
+
+    // Prevent other player devices from skipping the active player's turn.
     if (currentDeviceId !== 'all' && currentDeviceId !== currentOwnerId) return;
 
     takeSnapshot();
@@ -2126,6 +2519,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentTurn: nextTurnNum,
     };
 
+    // Pending claims intentionally survive the turn change so the previous
+    // player can still claim after "next turn" is pressed.
     const updatedDiceState: DiceState = {
       ...currentDice,
       currentValue: null,
@@ -2136,6 +2531,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isRolling: false,
       rollingPlayerId: null,
       turnPhase: 'waiting_roll',
+      pendingClaims: currentDice.pendingClaims || [],
     };
 
     const turnLogEntry: GameLog = {
@@ -2177,9 +2573,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentDice = getLocalState<DiceState>('pt_dice', diceStateRef.current) || diceStateRef.current;
     const currentDeviceId = devicePlayerIdRef.current;
 
-    // Prevent switching turn mid-roll or while a rolled claim is pending
+    // Prevent switching turn mid-roll. Existing claims are preserved and do
+    // not block manual turn control.
     if (isRollingRef.current || currentDice.isRolling) return;
-    if (currentDice.hasRolledThisTurn && (currentDice.turnPhase ?? 'claim_pending') === 'claim_pending') return;
 
     const currentActiveId = currentSettings.activePlayerId || currentPlayers[0]?.id;
     if (currentDeviceId !== 'all' && currentDeviceId !== currentActiveId) return;
@@ -2204,6 +2600,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isRolling: false,
       rollingPlayerId: null,
       turnPhase: 'waiting_roll',
+      pendingClaims: currentDice.pendingClaims || [],
     };
 
     const turnLogEntry: GameLog = {
@@ -2236,6 +2633,70 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
+    soundEffects.playClick();
+  };
+
+  // Explicitly discard one dice claim without touching the other pending
+  // claims or the active player's turn.
+  const skipPendingClaim = (claimId?: string) => {
+    const currentSettings = getLocalState<GameSettings>('pt_settings', settingsRef.current) || settingsRef.current;
+    const currentDice = getLocalState<DiceState>('pt_dice', diceStateRef.current) || diceStateRef.current;
+    const currentPlayers = playersRef.current;
+    const currentDeviceId = devicePlayerIdRef.current;
+
+    if (currentDice.isRolling || isRollingRef.current) return;
+
+    const queue = currentDice.pendingClaims || [];
+    const activeId = currentSettings.activePlayerId || currentPlayers[0]?.id;
+    const claim = claimId
+      ? queue.find(c => c.id === claimId)
+      : (queue.find(c => c.playerId === activeId) || queue[0]);
+
+    if (!claim) return;
+    if (currentDeviceId !== 'all' && currentDeviceId !== claim.playerId && currentDeviceId !== activeId) return;
+
+    takeSnapshot();
+    const remainingClaims = queue.filter(c => c.id !== claim.id);
+    const isActiveClaim = claim.playerId === activeId && (
+      currentDice.hasRolledThisTurn ||
+      currentDice.lastRolledByPlayerId === claim.playerId
+    );
+
+    const updatedDiceState: DiceState = {
+      ...currentDice,
+      pendingClaims: remainingClaims,
+      ...(isActiveClaim ? {
+        currentValue: null,
+        lastRolledByPlayerId: null,
+        lastRolledAtRound: null,
+        lastRolledAtTurn: null,
+        hasRolledThisTurn: false,
+        isRolling: false,
+        rollingPlayerId: null,
+        turnPhase: 'waiting_roll' as const,
+      } : {}),
+    };
+
+    const claimPlayer = currentPlayers.find(p => p.id === claim.playerId);
+    const skipLog: GameLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      round: currentSettings.currentRound,
+      type: 'game_control',
+      description: `Hak klaim dadu ${claimPlayer?.name || claim.playerId} (angka ${claim.diceValue}, giliran #${claim.turn}) dilewati.`,
+    };
+    const updatedLogs = [skipLog, ...logsRef.current];
+
+    diceStateRef.current = updatedDiceState;
+    logsRef.current = updatedLogs;
+    setDiceState(updatedDiceState);
+    setLogsState(updatedLogs);
+    saveLocalState('pt_dice', updatedDiceState);
+    saveLocalState('pt_logs', updatedLogs);
+    broadcastGameEvent({
+      type: 'STATE_SYNC',
+      payload: { diceState: updatedDiceState, logs: updatedLogs }
+    });
     soundEffects.playClick();
   };
 
@@ -2299,6 +2760,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Turn & Dice
       activePlayer,
       claimTurnPlayer,
+      pendingClaims,
+      activePendingClaim,
       isTurnLocked,
       devicePlayerId,
       setDevicePlayerId,
@@ -2306,6 +2769,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rollDice,
       nextTurn,
       setActiveTurnPlayer,
+      skipPendingClaim,
 
       setPlayers: setPlayersState,
       updatePlayer,
