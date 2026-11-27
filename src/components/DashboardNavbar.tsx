@@ -61,27 +61,40 @@ export const DashboardNavbar: React.FC = () => {
 
   const [activeSectionId, setActiveSectionId] = useState<string>('map-section');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [isDesktopActionOpen, setIsDesktopActionOpen] = useState<boolean>(false);
 
   const headerBarRef = useRef<HTMLDivElement>(null);
+  const desktopActionRef = useRef<HTMLDivElement>(null);
   const manualScrollLockUntilRef = useRef<number>(0);
 
-  // Close mobile drawer when resizing to tablet/desktop or pressing Escape
+  // Close mobile drawer when resizing to tablet/desktop, desktop action menu at wide widths, or on Escape / outside click
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) {
         setIsMobileMenuOpen(false);
       }
+      if (window.innerWidth >= 1440) {
+        setIsDesktopActionOpen(false);
+      }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsMobileMenuOpen(false);
+        setIsDesktopActionOpen(false);
+      }
+    };
+    const handlePointerDown = (e: MouseEvent) => {
+      if (desktopActionRef.current && !desktopActionRef.current.contains(e.target as Node)) {
+        setIsDesktopActionOpen(false);
       }
     };
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handlePointerDown);
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handlePointerDown);
     };
   }, []);
 
@@ -130,6 +143,7 @@ export const DashboardNavbar: React.FC = () => {
   const scrollToSection = (id: string) => {
     setActiveSectionId(id);
     setIsMobileMenuOpen(false);
+    setIsDesktopActionOpen(false);
     manualScrollLockUntilRef.current = Date.now() + 750;
 
     const el = document.getElementById(id);
@@ -142,16 +156,19 @@ export const DashboardNavbar: React.FC = () => {
 
   const handleQuickCardEntry = () => {
     setIsMobileMenuOpen(false);
+    setIsDesktopActionOpen(false);
     openModal('QUICK_CARD_ENTRY');
   };
 
   const handleOpenSettings = () => {
     setIsMobileMenuOpen(false);
+    setIsDesktopActionOpen(false);
     openModal('SETTINGS');
   };
 
   const handleNewGame = () => {
     setIsMobileMenuOpen(false);
+    setIsDesktopActionOpen(false);
     if (window.confirm('Mulai sesi pertandingan baru? Seluruh data gameplay sesi ini akan direset kembali ke setup awal.')) {
       resetGame();
     }
@@ -159,6 +176,7 @@ export const DashboardNavbar: React.FC = () => {
 
   const handleEndGame = () => {
     setIsMobileMenuOpen(false);
+    setIsDesktopActionOpen(false);
     openModal('END_GAME');
   };
 
@@ -185,10 +203,10 @@ export const DashboardNavbar: React.FC = () => {
 
   const isEnded = settings.status === 'ended';
 
-  const renderMatchTimer = (compact = false) => (
+  const renderMatchTimer = (compact = false, desktopAdaptive = false) => (
     <div
       className={`flex items-center gap-1.5 rounded-xl border shadow-2xs shrink-0 whitespace-nowrap ${
-        compact ? 'px-2 py-1' : 'px-2.5 py-1'
+        compact ? 'px-2 py-1' : 'px-2 xl:px-2.5 py-1'
       } ${
         gameTimerExpired
           ? 'bg-red-50 border-red-300 text-red-700'
@@ -201,16 +219,37 @@ export const DashboardNavbar: React.FC = () => {
       <Clock className={`w-3.5 h-3.5 shrink-0 ${gameTimerUrgent ? 'animate-pulse' : ''}`} />
       <div className="leading-none">
         {!compact && (
-          <span className="block text-[8px] font-extrabold uppercase tracking-wider opacity-60">
+          <span
+            className={`text-[8px] font-extrabold uppercase tracking-wider opacity-60 ${
+              desktopAdaptive ? 'hidden xl:block' : 'block'
+            }`}
+          >
             Match Timer
           </span>
         )}
         <span
-          className={`block font-mono font-black ${compact ? 'text-[11px]' : 'text-[11px] mt-0.5'} ${
-            gameTimerUrgent ? 'animate-pulse' : ''
-          }`}
+          className={`block font-mono font-black ${
+            compact
+              ? 'text-[11px]'
+              : desktopAdaptive
+                ? 'text-[11px] xl:mt-0.5'
+                : 'text-[11px] mt-0.5'
+          } ${gameTimerUrgent ? 'animate-pulse' : ''}`}
         >
-          {gameTimerExpired ? (compact ? 'HABIS' : 'WAKTU HABIS') : formattedGameTimer}
+          {gameTimerExpired ? (
+            compact ? (
+              'HABIS'
+            ) : desktopAdaptive ? (
+              <>
+                <span className="xl:hidden">HABIS</span>
+                <span className="hidden xl:inline">WAKTU HABIS</span>
+              </>
+            ) : (
+              'WAKTU HABIS'
+            )
+          ) : (
+            formattedGameTimer
+          )}
         </span>
       </div>
       <span
@@ -256,10 +295,10 @@ export const DashboardNavbar: React.FC = () => {
                 <img
                   src={BRAND_LOGO}
                   alt="Political Territory"
-                  className="h-6 min-[376px]:h-7 w-auto rounded-lg shrink-0 shadow-2xs"
+                  className="h-7 w-auto rounded-lg shrink-0 shadow-2xs"
                   draggable={false}
                 />
-                <h1 className="font-display font-black text-[9.5px] min-[360px]:text-[10.5px] min-[410px]:text-xs text-[#253451] uppercase tracking-tight whitespace-nowrap truncate">
+                <h1 className="font-display font-black text-[10px] min-[376px]:text-[11px] min-[430px]:text-xs leading-[1.05] min-[430px]:leading-tight text-[#253451] uppercase tracking-tight min-[430px]:whitespace-nowrap">
                   POLITICAL TERRITORY
                 </h1>
                 {renderLiveBadge()}
@@ -381,25 +420,25 @@ export const DashboardNavbar: React.FC = () => {
           </div>
 
           {/* ===============================================================
-              TABLET (768–1279px: 2 Balanced Rows) & DESKTOP (1280px+: 1 Row)
+              TABLET (768–1023px: 2 Balanced Rows) & LAPTOP/DESKTOP (1024px+: 1 Row)
              =============================================================== */}
-          <div className="hidden md:flex md:flex-wrap xl:flex-nowrap items-center justify-between max-w-[1600px] mx-auto w-full gap-x-2 2xl:gap-x-3 gap-y-1.5 px-3 lg:px-4 2xl:px-6 py-2">
+          <div className="hidden md:flex md:flex-wrap lg:flex-nowrap items-center justify-between max-w-[1600px] mx-auto w-full gap-x-2 lg:gap-x-2.5 xl:gap-x-3 2xl:gap-x-4 gap-y-1.5 px-3 lg:px-3.5 xl:px-4 2xl:px-6 py-2">
             {/* 1. Brand, LIVE Status & Round/Giliran */}
-            <div className="flex items-center gap-2 shrink-0 min-w-0 xl:order-1">
+            <div className="flex items-center gap-2 lg:gap-1.5 xl:gap-2 min-w-0 shrink-0 lg:shrink lg:order-1">
               <img
                 src={BRAND_LOGO}
                 alt="Political Territory"
-                className="h-7 2xl:h-8 w-auto rounded-xl shrink-0 shadow-2xs"
+                className="h-7 lg:h-6 xl:h-7 2xl:h-8 w-auto rounded-xl shrink-0 shadow-2xs"
                 draggable={false}
               />
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h1 className="font-display font-black text-xs xl:text-[11.5px] 2xl:text-[13px] text-[#253451] uppercase tracking-tight 2xl:tracking-wide whitespace-nowrap">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h1 className="font-display font-black text-[11.5px] lg:text-[11px] xl:text-[12px] 2xl:text-[13.5px] text-[#253451] uppercase tracking-tight 2xl:tracking-wide whitespace-nowrap lg:truncate">
                     POLITICAL TERRITORY
                   </h1>
                   {renderLiveBadge()}
                 </div>
-                <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-[#253451]/60 whitespace-nowrap">
+                <div className="flex items-center gap-1 text-[9.5px] lg:text-[9px] xl:text-[10px] font-mono font-bold text-[#253451]/60 whitespace-nowrap lg:truncate">
                   <span>Round #{settings.currentRound}</span>
                   <span>•</span>
                   <span>Giliran #{settings.currentTurn || 1}</span>
@@ -407,44 +446,10 @@ export const DashboardNavbar: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Match Timer & Active Player Spotlight */}
-            <div className="flex items-center gap-1.5 2xl:gap-2 shrink-0 md:order-2 xl:order-3">
-              {renderMatchTimer(false)}
-
-              {displayActivePlayer && (
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border ${activeBadge.border} ${activeBadge.lightBg} shadow-2xs min-w-0`}>
-                  <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-black/10 bg-white">
-                    <PlayerLogo player={displayActivePlayer} size="full" showBadge={false} />
-                  </div>
-                  <span className="font-display font-black text-[11px] text-[#253451] whitespace-nowrap max-w-[70px] lg:max-w-[96px] xl:max-w-[72px] 2xl:max-w-[116px] truncate">
-                    {displayActivePlayer.name}
-                  </span>
-                  <span className={`w-2 h-2 rounded-full ${activeBadge.bg} shrink-0 animate-pulse`} />
-                  <select
-                    aria-label="Ganti giliran pemain aktif"
-                    value={displayActivePlayer.id}
-                    disabled={!canSwitchTurn}
-                    onChange={e => setActiveTurnPlayer(e.target.value)}
-                    className="text-[10px] font-bold bg-white/90 border border-[#EAE9E3] hover:border-[#253451]/40 rounded-lg px-1.5 py-1 text-[#253451] outline-none cursor-pointer max-w-[110px] xl:max-w-[96px] 2xl:max-w-[140px] disabled:opacity-45 disabled:cursor-not-allowed"
-                    title={turnSwitchTooltip}
-                  >
-                    {players.map(p => (
-                      <option key={p.id} value={p.id}>
-                        Oper ke {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            {/* Deterministic Row Break for Tablet / Compact Desktop (768px–1279px) */}
-            <div className="hidden md:block xl:hidden basis-full h-px bg-[#EAE9E3]/70 md:order-3" />
-
-            {/* 3. Navigation Links */}
+            {/* 2. Navigation Links (Row 2 centered on 768–1023px, inline center on 1024px+) */}
             <nav
               aria-label="Navigasi bagian dashboard"
-              className="flex items-center gap-0.5 bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl p-0.5 shrink-0 md:order-4 xl:order-2"
+              className="flex items-center justify-center gap-0.5 bg-[#F8F5EC] border border-[#EAE9E3] rounded-xl p-0.5 shrink-0 md:order-4 md:w-full lg:w-auto lg:order-2"
             >
               {NAV_ITEMS.map(item => {
                 const Icon = item.icon;
@@ -455,60 +460,166 @@ export const DashboardNavbar: React.FC = () => {
                     type="button"
                     onClick={() => scrollToSection(item.id)}
                     aria-current={isActive ? 'location' : undefined}
-                    className={`px-1.5 lg:px-2 xl:px-1.5 2xl:px-2.5 py-1.5 rounded-lg text-[10.5px] lg:text-[11px] font-extrabold transition-all flex items-center gap-1 whitespace-nowrap shrink-0 ${
+                    className={`px-2 lg:px-1 xl:px-2 2xl:px-2.5 py-1.5 rounded-lg text-[11px] lg:text-[10px] xl:text-[11px] 2xl:text-[11.5px] font-extrabold transition-all flex items-center justify-center gap-1 lg:gap-0.5 xl:gap-1 whitespace-nowrap shrink-0 md:flex-1 lg:flex-initial ${
                       isActive
                         ? 'bg-[#253451] text-white shadow-xs'
                         : 'text-[#253451]/75 hover:text-[#253451] hover:bg-white'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#F4CE70]' : ''}`} />
+                    <Icon className={`w-3.5 h-3.5 lg:w-3 lg:h-3 xl:w-3.5 xl:h-3.5 shrink-0 ${isActive ? 'text-[#F4CE70]' : ''}`} />
                     <span>{item.label}</span>
                   </button>
                 );
               })}
             </nav>
 
-            {/* 4. Game Action Controls */}
-            <div className="flex items-center gap-1 lg:gap-1.5 shrink-0 md:order-5 xl:order-4">
-              <button
-                type="button"
-                onClick={handleQuickCardEntry}
-                className="px-2 lg:px-2.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-[#F4CE70] text-[10.5px] lg:text-[11px] font-extrabold transition shadow-xs flex items-center gap-1 whitespace-nowrap shrink-0 active:scale-95"
-                title="Input cepat kode kartu fisik (Policy, Crisis, Opportunity, Mission)"
-              >
-                <QrCode className="w-3.5 h-3.5 shrink-0" />
-                <span>Input Kartu</span>
-              </button>
+            {/* 3. Right Cluster: Match Timer, Active Player Switcher & Game Controls */}
+            <div className="flex items-center gap-1.5 lg:gap-1 xl:gap-2 2xl:gap-2.5 shrink-0 md:order-2 lg:order-3">
+              {renderMatchTimer(false, true)}
 
-              <button
-                type="button"
-                onClick={handleNewGame}
-                className="px-2 lg:px-2.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] font-extrabold text-[10.5px] lg:text-[11px] uppercase tracking-tight lg:tracking-wide transition shadow-2xs flex items-center gap-1 whitespace-nowrap shrink-0 active:scale-95"
-                title="Mulai Sesi Pertandingan Baru"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-[#EF956F] shrink-0" />
-                <span>New Game</span>
-              </button>
+              {displayActivePlayer && (
+                <div
+                  className={`relative flex items-center gap-1.5 lg:gap-1 xl:gap-1.5 px-2 lg:px-1.5 xl:px-2 py-1 rounded-xl border ${activeBadge.border} ${activeBadge.lightBg} shadow-2xs min-w-0 transition hover:border-[#253451]/40 focus-within:ring-2 focus-within:ring-[#253451]/25`}
+                  title={turnSwitchTooltip}
+                >
+                  <div className="w-5 h-5 lg:w-4 lg:h-4 xl:w-5 xl:h-5 rounded-full overflow-hidden shrink-0 border border-black/10 bg-white">
+                    <PlayerLogo player={displayActivePlayer} size="full" showBadge={false} />
+                  </div>
+                  <span className="font-display font-black text-[11px] lg:text-[10px] xl:text-[11px] 2xl:text-xs text-[#253451] whitespace-nowrap max-w-[76px] lg:max-w-[52px] xl:max-w-[88px] min-[1440px]:max-w-[116px] truncate">
+                    {displayActivePlayer.name}
+                  </span>
+                  <span className={`w-2 h-2 lg:w-1.5 lg:h-1.5 xl:w-2 xl:h-2 rounded-full ${activeBadge.bg} shrink-0 animate-pulse`} />
+                  {canSwitchTurn ? (
+                    <ChevronDown className="w-3.5 h-3.5 lg:w-3 lg:h-3 xl:w-3.5 xl:h-3.5 text-[#253451]/70 shrink-0" />
+                  ) : (
+                    <Lock className="w-3 h-3 text-[#253451]/45 shrink-0" />
+                  )}
+                  <select
+                    aria-label="Ganti giliran pemain aktif"
+                    value={displayActivePlayer.id}
+                    disabled={!canSwitchTurn}
+                    onChange={e => setActiveTurnPlayer(e.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                    title={turnSwitchTooltip}
+                  >
+                    {players.map(p => (
+                      <option key={p.id} value={p.id}>
+                        Oper ke {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-              <button
-                type="button"
-                onClick={handleOpenSettings}
-                className="p-1.5 lg:p-2 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] transition shrink-0 active:scale-95"
-                title="Pengaturan Permainan & Cadangan Data"
-                aria-label="Pengaturan Permainan"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
+              {/* Game Action Controls */}
+              <div className="flex items-center gap-1 lg:gap-1 xl:gap-1.5 2xl:gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleQuickCardEntry}
+                  className="px-2 lg:px-1.5 xl:px-2.5 py-1.5 rounded-xl bg-[#253451] hover:bg-[#1C273D] text-[#F4CE70] text-[10.5px] lg:text-[10px] xl:text-[11px] font-extrabold transition shadow-xs flex items-center gap-1 lg:gap-0.5 xl:gap-1 whitespace-nowrap shrink-0 active:scale-95"
+                  title="Input cepat kode kartu fisik (Policy, Crisis, Opportunity, Mission)"
+                >
+                  <QrCode className="w-3.5 h-3.5 lg:w-3 lg:h-3 xl:w-3.5 xl:h-3.5 shrink-0" />
+                  <span>Input Kartu</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handleEndGame}
-                className="px-2 lg:px-2.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-[10.5px] lg:text-[11px] uppercase tracking-tight lg:tracking-wide transition shadow-xs flex items-center gap-1 whitespace-nowrap shrink-0 active:scale-95"
-                title="Akhiri pertandingan dan hitung pemenang"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Akhiri</span>
-              </button>
+                {/* Inline New Game (1440px+, earlier widths use the compact dropdown) */}
+                <button
+                  type="button"
+                  onClick={handleNewGame}
+                  className="hidden min-[1440px]:flex px-1.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] font-extrabold text-[10px] xl:text-[11px] uppercase tracking-tight 2xl:tracking-wide transition shadow-2xs items-center gap-0.5 xl:gap-1 whitespace-nowrap shrink-0 active:scale-95"
+                  title="Mulai Sesi Pertandingan Baru"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-[#EF956F] shrink-0" />
+                  <span>New Game</span>
+                </button>
+
+                {/* Inline Settings (1280px+) */}
+                <button
+                  type="button"
+                  onClick={handleOpenSettings}
+                  className="hidden xl:flex items-center gap-1 p-1.5 2xl:px-2.5 2xl:py-1.5 rounded-xl bg-[#F8F5EC] hover:bg-[#EAE9E3] border border-[#EAE9E3] text-[#253451] font-extrabold text-[11px] transition shrink-0 whitespace-nowrap active:scale-95"
+                  title="Pengaturan Permainan & Cadangan Data"
+                  aria-label="Pengaturan Permainan"
+                >
+                  <Settings className="w-4 h-4 shrink-0" />
+                  <span className="hidden min-[1600px]:inline">Pengaturan</span>
+                </button>
+
+                {/* Inline End Game (1440px+, earlier widths use the compact dropdown) */}
+                <button
+                  type="button"
+                  onClick={handleEndGame}
+                  className="hidden min-[1440px]:flex px-1.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-[10px] xl:text-[11px] uppercase tracking-tight 2xl:tracking-wide transition shadow-xs items-center gap-0.5 xl:gap-1 whitespace-nowrap shrink-0 active:scale-95"
+                  title="Akhiri pertandingan dan hitung pemenang"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="min-[1600px]:hidden">Akhiri</span>
+                  <span className="hidden min-[1600px]:inline">Akhiri Permainan</span>
+                </button>
+
+                {/* Compact Action Dropdown for 768px–1439px (keeps the laptop navbar balanced and inside the viewport) */}
+                <div ref={desktopActionRef} className="relative min-[1440px]:hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsDesktopActionOpen(prev => !prev)}
+                    aria-expanded={isDesktopActionOpen}
+                    aria-haspopup="menu"
+                    aria-controls="desktop-navbar-actions-menu"
+                    aria-label="Menu kontrol permainan"
+                    title="Menu New Game, Pengaturan & Akhiri Permainan"
+                    className={`h-[30px] px-2 rounded-xl border text-[10.5px] xl:text-[11px] font-extrabold transition flex items-center gap-1 whitespace-nowrap active:scale-95 ${
+                      isDesktopActionOpen
+                        ? 'bg-[#253451] text-[#F4CE70] border-[#253451]'
+                        : 'bg-[#F8F5EC] hover:bg-[#EAE9E3] border-[#EAE9E3] text-[#253451]'
+                    }`}
+                  >
+                    <Menu className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden md:inline">Menu</span>
+                    <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${isDesktopActionOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isDesktopActionOpen && (
+                    <div
+                      id="desktop-navbar-actions-menu"
+                      role="menu"
+                      className="absolute right-0 mt-1.5 w-52 rounded-2xl bg-white border border-[#E4E1D7] shadow-soft-lg p-1.5 space-y-1 z-50 navbar-drawer-enter"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleNewGame}
+                        className="w-full px-2.5 py-2 rounded-xl text-left text-xs font-extrabold text-[#253451] hover:bg-[#F8F5EC] transition flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-[#EF956F] shrink-0" />
+                        <span>New Game</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleOpenSettings}
+                        className="w-full xl:hidden px-2.5 py-2 rounded-xl text-left text-xs font-extrabold text-[#253451] hover:bg-[#F8F5EC] transition flex items-center gap-2"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-[#253451]/80 shrink-0" />
+                        <span>Pengaturan</span>
+                      </button>
+
+                      <div className="my-1 h-px bg-[#EAE9E3]" />
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleEndGame}
+                        className="w-full px-2.5 py-2 rounded-xl text-left text-xs font-extrabold text-red-700 bg-red-50/70 hover:bg-red-100 transition flex items-center gap-2"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                        <span>Akhiri Permainan</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
